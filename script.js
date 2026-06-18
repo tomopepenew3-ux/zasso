@@ -16,7 +16,7 @@ const RARE_WEEDS = [
   { name: "うるさい草", desc: "いろんなことをずっとしゃべり続けている。", icon: RARE_ICONS[8] },
 ];
 
-// ‪‪草、レア(長押し)草、花、野菜、木の数はここ。
+//草、レア(長押し)草、花、野菜、木の数はここ。
 const COUNTS = { weed: 150, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = COUNTS.weed + COUNTS.rare + COUNTS.flower + COUNTS.veggie + COUNTS.tree; // 170
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.rare;
