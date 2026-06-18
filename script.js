@@ -16,12 +16,12 @@ const RARE_WEEDS = [
   { name: "うるさい草", desc: "いろんなことをずっとしゃべり続けている。", icon: RARE_ICONS[8] },
 ];
 
-// レア(長押し)草は一旦ゼロにして検証中。戻すときはrareの数を増やせばOK
-const COUNTS = { weed: 150, rare: 0, flower: 12, veggie: 6, tree: 2 };
+// ‪‪草、レア(長押し)草、花、野菜、木の数はここ。
+const COUNTS = { weed: 150, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = COUNTS.weed + COUNTS.rare + COUNTS.flower + COUNTS.veggie + COUNTS.tree; // 170
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.rare;
 const HOLD_DURATION = 1100;
-const REVEAL_CHANCE = 0.5; // 長押し草を抜いたとき下からお花が出る確率
+const REVEAL_CHANCE = 0; // 長押し草を抜いたとき下からお花が出る確率
 
 // 列数・行数はぴったり割り切れる組み合わせ(17×10 / 10×17)を最初に1回だけ決める。
 // 端数の出る最後の行ができないようにするのと、家庭菜園のブロック位置を安定させるため、
