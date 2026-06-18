@@ -88,6 +88,12 @@
     -webkit-touch-callout: none;
   }
   .tile.cleared { background: var(--soil-light); touch-action: pan-y; }
+  .tile.holding {
+    transform: scale(1.9);
+    z-index: 30;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.45), 0 0 14px 4px var(--rare-glow);
+    transition: transform 0.12s ease;
+  }
   .tile.rare-glow { box-shadow: 0 0 10px 2px var(--rare-glow); }
   .tile.rare-glow .tile-emoji { filter: drop-shadow(0 0 4px gold); animation: pulse 1.4s ease-in-out infinite; }
   .tile.shake { animation: tile-shake 0.3s ease-in-out; }

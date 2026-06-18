@@ -16,11 +16,18 @@ const RARE_WEEDS = [
   { name: "うるさい草", desc: "いろんなことをずっとしゃべり続けている。", icon: RARE_ICONS[8] },
 ];
 
-// 長押し草は全体の中だとごく少数に絞り、抜くとお花を発掘できる「守ってる」感を出す
-const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
+// レア(長押し)草は一旦ゼロにして検証中。戻すときはrareの数を増やせばOK
+const COUNTS = { weed: 150, rare: 0, flower: 12, veggie: 6, tree: 2 };
+const TOTAL_CELLS = COUNTS.weed + COUNTS.rare + COUNTS.flower + COUNTS.veggie + COUNTS.tree; // 170
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.rare;
 const HOLD_DURATION = 1100;
 const REVEAL_CHANCE = 0.5; // 長押し草を抜いたとき下からお花が出る確率
+
+// 列数・行数はぴったり割り切れる組み合わせ(17×10 / 10×17)を最初に1回だけ決める。
+// 端数の出る最後の行ができないようにするのと、家庭菜園のブロック位置を安定させるため、
+// リサイズの度には変えず、マスのpxサイズだけをfitGridToScreenで調整する。
+const COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
+const ROWS = TOTAL_CELLS / COLS;
 
 let tiles = [];
 let totalPulls = {}; // { 草の名前: 累計で抜いた本数 } ※庭をリセットしても引き継ぐ
@@ -30,19 +37,39 @@ let holdState = null; // { id, interval, startTime }
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function buildField() {
+  const grid2d = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+
+  // 家庭菜園(🍆🥕)を1箇所にまとめて、長方形の畝ブロックとして配置する
+  const VEG_W = COLS >= ROWS ? 3 : 2;
+  const VEG_H = COUNTS.veggie / VEG_W;
+  const anchorRow = Math.floor(Math.random() * (ROWS - VEG_H + 1));
+  const anchorCol = Math.floor(Math.random() * (COLS - VEG_W + 1));
+  for (let r = 0; r < VEG_H; r++) {
+    for (let c = 0; c < VEG_W; c++) {
+      grid2d[anchorRow + r][anchorCol + c] = "veggie";
+    }
+  }
+
+  // 残りのマスに weed / rare / flower / tree をランダムに散らす
   let pool = [];
   for (let i = 0; i < COUNTS.weed; i++) pool.push("weed");
   for (let i = 0; i < COUNTS.rare; i++) pool.push("rare");
   for (let i = 0; i < COUNTS.flower; i++) pool.push("flower");
-  for (let i = 0; i < COUNTS.veggie; i++) pool.push("veggie");
   for (let i = 0; i < COUNTS.tree; i++) pool.push("tree");
-
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
 
-  return pool.map((type, idx) => {
+  let p = 0;
+  const flatTypes = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      flatTypes.push(grid2d[r][c] || pool[p++]);
+    }
+  }
+
+  return flatTypes.map((type, idx) => {
     let emoji = "", rareInfo = null;
     if (type === "weed") emoji = pick(WEED_EMOJI);
     if (type === "flower") emoji = pick(FLOWER_EMOJI);
@@ -87,28 +114,16 @@ function fitGridToScreen() {
   const field = document.getElementById("field");
   const grid = document.getElementById("grid");
   const gap = 4;
-  const total = tiles.length;
-  if (!total) return;
   const availW = field.clientWidth - 16; // .field の左右パディング分
   const availH = field.clientHeight - 16; // .field の上下パディング分
-  const minSize = 24; // タイルが小さすぎて押せなくなるのを防ぐ下限
+  const minSize = 20; // タイルが小さすぎて押せなくなるのを防ぐ下限
 
-  let bestCols = 10;
-  let bestSize = 0;
-  for (let cols = 4; cols <= 30; cols++) {
-    const rows = Math.ceil(total / cols);
-    const sizeW = (availW - gap * (cols - 1)) / cols;
-    const sizeH = (availH - gap * (rows - 1)) / rows;
-    const size = Math.min(sizeW, sizeH);
-    if (size > bestSize) {
-      bestSize = size;
-      bestCols = cols;
-    }
-  }
-  bestSize = Math.max(bestSize, minSize);
+  const sizeW = (availW - gap * (COLS - 1)) / COLS;
+  const sizeH = (availH - gap * (ROWS - 1)) / ROWS;
+  const size = Math.max(Math.min(sizeW, sizeH), minSize);
 
-  grid.style.gridTemplateColumns = `repeat(${bestCols}, ${bestSize}px)`;
-  grid.style.gridAutoRows = `${bestSize}px`;
+  grid.style.gridTemplateColumns = `repeat(${COLS}, ${size}px)`;
+  grid.style.gridAutoRows = `${size}px`;
   grid.style.gap = `${gap}px`;
   grid.style.justifyContent = "center";
 }
@@ -188,8 +203,11 @@ function cancelHold() {
   if (holdState) {
     clearInterval(holdState.interval);
     const el = getTileEl(holdState.id);
-    const ring = el && el.querySelector(".hold-ring");
-    if (ring) ring.remove();
+    if (el) {
+      const ring = el.querySelector(".hold-ring");
+      if (ring) ring.remove();
+      el.classList.remove("holding");
+    }
   }
   holdState = null;
 }
@@ -198,6 +216,7 @@ function startHold(id) {
   if (holdState) cancelHold();
   const el = getTileEl(id);
   if (!el) return;
+  el.classList.add("holding"); // マスを拡大表示してゲージを見やすくする
   const ring = document.createElement("div");
   ring.className = "hold-ring";
   ring.innerHTML = `<svg viewBox="0 0 36 36" width="100%" height="100%">
@@ -214,6 +233,7 @@ function startHold(id) {
       clearInterval(interval);
       holdState = null;
       ring.remove();
+      el.classList.remove("holding");
       clearTile(id);
     }
   }, 40);
