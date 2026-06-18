@@ -16,15 +16,16 @@ const RARE_WEEDS = [
   { name: "うるさい草", desc: "いろんなことをずっとしゃべり続けている。", icon: RARE_ICONS[8] },
 ];
 
+// 長押し草は全体の中だとごく少数に絞り、抜くとお花を発掘できる「守ってる」感を出す
 const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.rare;
 const HOLD_DURATION = 1100;
-const REVEAL_CHANCE = 0.5;
+const REVEAL_CHANCE = 0.5; // 長押し草を抜いたとき下からお花が出る確率
 
 let tiles = [];
-let totalPulls = {};
+let totalPulls = {}; // { 草の名前: 累計で抜いた本数 } ※庭をリセットしても引き継ぐ
 let dragging = false;
-let holdState = null;
+let holdState = null; // { id, interval, startTime }
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -69,6 +70,53 @@ function renderField() {
   });
   document.getElementById("totalClearable").textContent = TOTAL_CLEARABLE;
   updateCounters();
+  fitGridToScreen();
+}
+
+// 画面サイズに合わせてマス目の大きさと列数を自動計算し、
+// スクロールしなくても庭全体が1画面に収まるようにする
+function setAppHeight() {
+  // iOSのSafariはアドレスバーの開閉でvhの基準がズレるので、
+  // 実際に見えている領域(visualViewport)を使って高さを直接指定する
+  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.getElementById("app").style.height = h + "px";
+}
+
+function fitGridToScreen() {
+  setAppHeight();
+  const field = document.getElementById("field");
+  const grid = document.getElementById("grid");
+  const gap = 4;
+  const total = tiles.length;
+  if (!total) return;
+  const availW = field.clientWidth - 16; // .field の左右パディング分
+  const availH = field.clientHeight - 16; // .field の上下パディング分
+  const minSize = 24; // タイルが小さすぎて押せなくなるのを防ぐ下限
+
+  let bestCols = 10;
+  let bestSize = 0;
+  for (let cols = 4; cols <= 30; cols++) {
+    const rows = Math.ceil(total / cols);
+    const sizeW = (availW - gap * (cols - 1)) / cols;
+    const sizeH = (availH - gap * (rows - 1)) / rows;
+    const size = Math.min(sizeW, sizeH);
+    if (size > bestSize) {
+      bestSize = size;
+      bestCols = cols;
+    }
+  }
+  bestSize = Math.max(bestSize, minSize);
+
+  grid.style.gridTemplateColumns = `repeat(${bestCols}, ${bestSize}px)`;
+  grid.style.gridAutoRows = `${bestSize}px`;
+  grid.style.gap = `${gap}px`;
+  grid.style.justifyContent = "center";
+}
+
+window.addEventListener("resize", fitGridToScreen);
+window.addEventListener("orientationchange", fitGridToScreen);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", fitGridToScreen);
 }
 
 function getTileEl(id) {
