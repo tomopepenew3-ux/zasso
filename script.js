@@ -304,39 +304,39 @@ function triggerResist(id) {
 
 // ---- タッチ/ポインタ 共通ロジック ----
 function handleStart(id) {
-  lastProcessedId = id;
   unlockAudio();
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
-  if (tile.cleared && tile.type !== "veggie") return;
-  if (isProtected(tile)) { triggerShake(id); return; }
+  
+  if (isProtected(tile)) { triggerShake(id); dragging = false; return; }
   if (tile.type === "rare") { startHold(id); return; }
   if (canDragPull(tile)) { dragging = true; pullWeed(id); }
 }
 
 function handleMove(id) {
-  // もしidが取れなかったら何もしない
-  if (id === null) return;
-  
-  // 今触っている場所が、さっきと同じなら処理しない（これで連続のムダな計算を省く）
-  if (id === lastProcessedId) return;
-
   const tile = tiles.find((t) => t.id === id);
-  if (!tile) return;
+  if (!tile || (tile.cleared && tile.type !== "veggie")) return;
 
-  // 1. さっきの場所を更新
-  lastProcessedId = id;
+  // 花や木にぶつかったら、指を離すまでドラッグを無効にする
+  if (isProtected(tile)) {
+    triggerShake(id);
+    dragging = false; // 指を離すまで抜けない状態にする
+    return;
+  }
 
-  // 2. 状態判定
-  if (tile.cleared && tile.type !== "veggie") return;
-  if (tile.type === "rare") { triggerResist(id); dragging = false; return; }
-  if (isProtected(tile)) { triggerShake(id); dragging = false; return; }
+  // レア草も同様に、触れたらドラッグを解除してHoldに移行させる
+  if (tile.type === "rare") {
+    triggerResist(id);
+    dragging = false; 
+    return;
+  }
   
-  // 3. 抜く処理
+  // 普通の草を抜く
   if (canDragPull(tile)) {
     pullWeed(id);
   }
 }
+
 
   
   // 草を抜く処理
