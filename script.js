@@ -38,16 +38,30 @@ sfxPon.preload = "auto";
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // ---- 音声 ----
+// ここに新しい定数と、それを使う関数を並べて書きます
+const sfxPon1 = new Audio("pon1.mp3");
+const sfxPon2 = new Audio("pon2.mp3");
+sfxPon1.preload = "auto";
+sfxPon2.preload = "auto";
+
+let useFirstPon = true;
+
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  sfxPon.play().then(() => { sfxPon.pause(); sfxPon.currentTime = 0; }).catch(() => {});
+  // ここは必要に応じて1つ目の音源だけ鳴らすなど工夫してもOKです
+  sfxPon1.play().then(() => { sfxPon1.pause(); sfxPon1.currentTime = 0; }).catch(() => {});
 }
+
 function playPon() {
   unlockAudio();
-  sfxPon.currentTime = 0;
-  sfxPon.play().catch(() => {});
+  const target = useFirstPon ? sfxPon1 : sfxPon2;
+  useFirstPon = !useFirstPon;
+  
+  target.currentTime = 0;
+  target.play().catch(() => {});
 }
+
 
 // ---- タイル状態の判定ヘルパー ----
 function isWeedCover(tile)    { return tile.type === "veggie" && tile.weedCover; }
