@@ -150,10 +150,8 @@ function getTileEl(id) {
   return document.querySelector(`.tile[data-tile-id="${id}"]`);
 }
 
-// ヒント：判定エリアを少し広げる
 function getTileIdFromPoint(x, y) {
-  // 指の周り10ピクセルくらいを探すように調整
-  const el = document.elementFromPoint(x, y) || document.elementFromPoint(x + 10, y + 10);
+  const el = document.elementFromPoint(x, y);
   const tileEl = el && el.closest && el.closest(".tile");
   return tileEl ? Number(tileEl.dataset.tileId) : null;
 }
@@ -316,31 +314,32 @@ function handleStart(id) {
   if (canDragPull(tile)) { dragging = true; pullWeed(id); }
 }
 
-// handleMove の改善案
 function handleMove(id) {
-  // すでに処理済みなら無視（これはそのまま）
-  if (id === lastProcessedId) return;
-  lastProcessedId = id;
-
+  // ガードを外して、常に現在のidを判定対象にする
   const tile = tiles.find((t) => t.id === id);
-  if (!tile) return;
-
-  // 1. ここで「通り過ぎた場所」の判定を厳しくする
-  if (tile.cleared && tile.type !== "veggie") return;
   
-  // 2. もしなぞっている間に「これは抜けないよ！」という場所にぶつかったら
-  if (isProtected(tile)) {
-    triggerShake(id);
-    dragging = false;
-    return;
+  // 基本的なチェックだけ残す
+  if (!tile || (tile.cleared && tile.type !== "veggie")) return;
+
+  // レア草の判定
+  if (tile.type === "rare") { 
+    triggerResist(id); 
+    dragging = false; 
+    return; 
   }
   
-  // 3. なぞり直した時にもスムーズに反応するように
+  // 保護されている草の判定
+  if (isProtected(tile)) { 
+    triggerShake(id); 
+    dragging = false; 
+    return; 
+  }
+  
+  // 草を抜く処理
   if (canDragPull(tile)) {
     pullWeed(id);
   }
 }
-
 
 // ---- フィールドのイベント設定(タッチ優先、PC時はpointer) ----
 let fieldEl = null;
@@ -499,4 +498,4 @@ document.getElementById("modalOverlay").addEventListener("click", (e) => {
 });
 document.getElementById("resetBtn").addEventListener("click", resetField);
 
-resetField();
+resetField();resetField();
