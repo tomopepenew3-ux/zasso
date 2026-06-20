@@ -406,9 +406,15 @@ function resetField() {
 }
 
 document.addEventListener("pointermove", onPointerMoveGlobal);
+document.addEventListener("touchmove", (e) => {
+  if (!dragging) return;
+  const t = e.touches[0];
+  onPointerMoveGlobal({ clientX: t.clientX, clientY: t.clientY });
+}, { passive: true });
 document.addEventListener("pointerup", onPointerUpGlobal);
 document.addEventListener("pointercancel", onPointerUpGlobal);
 document.addEventListener("contextmenu", (e) => e.preventDefault());
+
 document.getElementById("zukanOpenBtn").addEventListener("click", () => {
   document.getElementById("modalOverlay").classList.add("open");
 });
