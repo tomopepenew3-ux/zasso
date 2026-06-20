@@ -12,13 +12,13 @@ const RARE_WEEDS = [
   { name: "なんか耳っぽい草",       desc: "風の音などを集めているように揺れている。",         icon: RARE_ICONS[3] },
   { name: "ウワァー！ってなる草",   desc: "引き抜くと悲鳴のような変な音が鳴る。",             icon: RARE_ICONS[4] },
   { name: "イヤァー！ってなる草",   desc: "近づくとしおれて、なんだかこちらまで悲しくなる。", icon: RARE_ICONS[5] },
-  { name: "夜中に踊るらしいh草",     desc: "真夜中になるとふわふわ揺れて踊り出す。",           icon: RARE_ICONS[6] },
+  { name: "夜中に踊るらしい草",     desc: "真夜中になるとふわふわ揺れて踊り出す。",           icon: RARE_ICONS[6] },
   { name: "エコな説明をする草",     desc: "近づくと図や記号でいろんな説明をしてくれる。",     icon: RARE_ICONS[7] },
   { name: "うるさい草",             desc: "いろんなことをずっとしゃべり続けている。",         icon: RARE_ICONS[8] },
 ];
 
 const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
-const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0); // 170
+const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
 const HOLD_DURATION = 1100;
 
@@ -29,11 +29,8 @@ let tiles = [];
 let totalPulls = {};
 let dragging = false;
 let holdState = null;
-let touchActive = false; // タッチ操作中はpointer eventを無視するフラグ
+let touchActive = false;
 let audioUnlocked = false;
-let lastProcessedId = null; 
-
-
 
 const sfxPon = new Audio("pon.mp3");
 sfxPon.preload = "auto";
@@ -41,40 +38,28 @@ sfxPon.preload = "auto";
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // ---- 音声 ----
-const sfxPon1 = new Audio("pon1.mp3");
-const sfxPon2 = new Audio("pon2.mp3");
-sfxPon1.preload = "auto";
-sfxPon2.preload = "auto";
-
-let useFirstPon = true;
-
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  sfxPon1.play().then(() => { sfxPon1.pause(); sfxPon1.currentTime = 0; }).catch(() => {});
+  sfxPon.play().then(() => { sfxPon.pause(); sfxPon.currentTime = 0; }).catch(() => {});
 }
-
 function playPon() {
   unlockAudio();
-  const target = useFirstPon ? sfxPon1 : sfxPon2;
-  useFirstPon = !useFirstPon;
-  
-  target.currentTime = 0;
-  target.play().catch(() => {});
+  sfxPon.currentTime = 0;
+  sfxPon.play().catch(() => {});
 }
 
-// ---- タイル状態の判定ヘルパー ----
-function isWeedCover(tile)    { return tile.type === "veggie" && tile.weedCover; }
+// ---- 状態判定 ----
+function isWeedCover(tile)      { return tile.type === "veggie" && tile.weedCover; }
 function isRevealedVeggie(tile) { return tile.type === "veggie" && !tile.weedCover; }
-function isProtected(tile)    { return tile.type === "flower" || tile.type === "tree" || isRevealedVeggie(tile); }
-function canDragPull(tile)    { return (tile.type === "weed" && !tile.cleared) || isWeedCover(tile); }
-function countsAsPulled(tile) {
+function isProtected(tile)      { return tile.type === "flower" || tile.type === "tree" || isRevealedVeggie(tile); }
+function canDragPull(tile)      { return (tile.type === "weed" && !tile.cleared) || isWeedCover(tile); }
+function countsAsPulled(tile)   {
   return (tile.type === "rare" && tile.cleared)
       || (tile.type === "weed" && tile.cleared)
       || isRevealedVeggie(tile);
 }
 
-// ---- グリッドサイズ計算 ----
 function getGridSize() {
   COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
   ROWS = TOTAL_CELLS / COLS;
@@ -84,8 +69,6 @@ function getGridSize() {
 function buildField() {
   getGridSize();
   const grid2d = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-
-  // 家庭菜園ブロック: 最初は草に偽装、なぞると野菜が発掘される
   const VEG_W = COLS >= ROWS ? 3 : 2;
   const VEG_H = COUNTS.veggie / VEG_W;
   const anchorRow = Math.floor(Math.random() * (ROWS - VEG_H + 1));
@@ -143,7 +126,6 @@ function renderField() {
   document.getElementById("totalClearable").textContent = TOTAL_CLEARABLE;
   updateCounters();
   fitGridToScreen();
-  setupFieldEvents();
 }
 
 function getTileEl(id) {
@@ -160,13 +142,11 @@ function updateTileVisual(id) {
   const tile = tiles.find((t) => t.id === id);
   const el = getTileEl(id);
   if (!tile || !el) return;
-
   const isSoil = tile.cleared && tile.type !== "veggie";
-  el.classList.toggle("cleared",        isSoil);
+  el.classList.toggle("cleared",         isSoil);
   el.classList.toggle("veggie-revealed", isRevealedVeggie(tile));
   el.classList.toggle("veggie-covered",  isWeedCover(tile));
   el.classList.toggle("rare-glow",       tile.type === "rare" && !tile.cleared);
-
   if (tile.type === "veggie") {
     const cover = el.querySelector(".weed-cover");
     const base  = el.querySelector(".veggie-base");
@@ -198,12 +178,12 @@ function addFloatEffect(id, text) {
   span.className = "float-effect";
   span.textContent = text;
   span.style.left = (rect.left + rect.width / 2) + "px";
-  span.style.top  = (rect.top  - 4) + "px";
+  span.style.top  = (rect.top - 4) + "px";
   document.body.appendChild(span);
   setTimeout(() => span.remove(), 750);
 }
 
-// ---- ゲージオーバーレイ ----
+// ---- ゲージ ----
 const gaugeOverlay = document.getElementById("gauge-overlay");
 const gaugeCircle  = gaugeOverlay.querySelector(".gauge-circle");
 const gaugeEmojiEl = document.getElementById("gaugeEmoji");
@@ -222,13 +202,11 @@ function showGaugeAt(id) {
   gaugeEmojiEl.textContent = tile ? tile.emoji : "🌟";
   gaugeOverlay.style.display = "flex";
 }
-
 function updateGauge(pct) {
   gaugeCircle.setAttribute("stroke-dasharray", `${pct * 0.94} 100`);
   const pushEl = gaugeOverlay.querySelector(".gauge-push");
   if (pushEl) pushEl.style.opacity = Math.max(0, 1 - pct / 40) + "";
 }
-
 function hideGauge() { gaugeOverlay.style.display = "none"; }
 
 // ---- タイル操作 ----
@@ -263,7 +241,6 @@ function pullRare(id) {
 }
 
 function cancelHold() {
-  lastProcessedId = null; // ここを足す！
   if (holdState) clearInterval(holdState.interval);
   holdState = null;
   hideGauge();
@@ -302,9 +279,8 @@ function triggerResist(id) {
   setTimeout(() => { el.classList.remove("resist"); delete el.dataset.resisting; }, 250);
 }
 
-// ---- タッチ/ポインタ 共通ロジック ----
+// ---- 共通ロジック ----
 function handleStart(id) {
-  lastProcessedId = id;
   unlockAudio();
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -315,46 +291,20 @@ function handleStart(id) {
 }
 
 function handleMove(id) {
-  // もしidが取れなかったら何もしない
-  if (id === null) return;
-  
-  // 今触っている場所が、さっきと同じなら処理しない（これで連続のムダな計算を省く）
-  if (id === lastProcessedId) return;
-
   const tile = tiles.find((t) => t.id === id);
-  if (!tile) return;
-
-  // 1. さっきの場所を更新
-  lastProcessedId = id;
-
-  // 2. 状態判定
-  if (tile.cleared && tile.type !== "veggie") return;
+  if (!tile || (tile.cleared && tile.type !== "veggie")) return;
   if (tile.type === "rare") { triggerResist(id); return; }
   if (isProtected(tile)) { triggerShake(id); return; }
-  
-  // 3. 抜く処理
-  if (canDragPull(tile)) {
-    pullWeed(id);
-  }
+  if (canDragPull(tile)) pullWeed(id);
 }
 
-  
-  // 草を抜く処理
-  if (canDragPull(tile)) {
-    pullWeed(id);
-  }
-}
+// ---- イベント設定(一度だけ) ----
+// touchmoveはdocumentレベルで拾う。フィールドで拾うとiOSが指の移動を追跡しないことがある。
+function setupEvents() {
+  const field = document.getElementById("field");
 
-// ---- フィールドのイベント設定(タッチ優先、PC時はpointer) ----
-let fieldEl = null;
-
-function setupFieldEvents() {
-  if (fieldEl) return; // 一度だけ設定する
-  fieldEl = document.getElementById("field");
-
-  // タッチ操作(iPhone/Android) — フィールド全体で一括管理
-  // touchstartをpreventDefaultすることでスクロールを止めつつtouchmoveも確実に発火させる
-  fieldEl.addEventListener("touchstart", (e) => {
+  // フィールドのtouchstart: ここでpreventDefaultしてスクロールを止め、タイルを認識する
+  field.addEventListener("touchstart", (e) => {
     e.preventDefault();
     touchActive = true;
     if (e.touches.length !== 1) return;
@@ -363,62 +313,52 @@ function setupFieldEvents() {
     if (id !== null) handleStart(id);
   }, { passive: false });
 
-  fieldEl.addEventListener("touchmove", (e) => {
+  // touchmoveはdocumentで拾う: iOSで指が動いたとき確実に発火する
+  document.addEventListener("touchmove", (e) => {
+    if (!touchActive || !dragging || e.touches.length !== 1) return;
     e.preventDefault();
-    if (!dragging || e.touches.length !== 1) return;
     const t = e.touches[0];
     const id = getTileIdFromPoint(t.clientX, t.clientY);
     if (id !== null) handleMove(id);
   }, { passive: false });
 
-  fieldEl.addEventListener("touchend", () => {
+  document.addEventListener("touchend", () => {
     dragging = false;
     cancelHold();
-    setTimeout(() => { touchActive = false; }, 300);
+    setTimeout(() => { touchActive = false; }, 100);
   });
-
-  fieldEl.addEventListener("touchcancel", () => {
+  document.addEventListener("touchcancel", () => {
     dragging = false;
     cancelHold();
     touchActive = false;
   });
 
-  // マウス操作(PC) — タッチ中は無視
-  fieldEl.addEventListener("pointerdown", (e) => {
+  // PC用: タッチ中は無視
+  field.addEventListener("pointerdown", (e) => {
     if (touchActive || e.pointerType === "touch") return;
     const id = getTileIdFromPoint(e.clientX, e.clientY);
     if (id !== null) handleStart(id);
   });
-
   document.addEventListener("pointermove", (e) => {
     if (touchActive || e.pointerType === "touch" || !dragging) return;
     const id = getTileIdFromPoint(e.clientX, e.clientY);
     if (id !== null) handleMove(id);
   });
-  
-  document.addEventListener("touchmove", (e) => {
-  if (!dragging || !e.touches[0]) return;
-  const t = e.touches[0];
-  const id = getTileIdFromPoint(t.clientX, t.clientY);
-  if (id !== null) handleMove(id);
-}, { passive: true });
-
   document.addEventListener("pointerup", () => {
     if (touchActive) return;
     dragging = false;
     cancelHold();
   });
-
   document.addEventListener("pointercancel", () => {
     if (touchActive) return;
     dragging = false;
     cancelHold();
   });
-  document.addEventListener("contextmenu", (e) => e.preventDefault()
-  );
+
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
-// ---- FINISH! 演出 ----
+// ---- FINISH ----
 function showFinish() {
   if (document.getElementById("finish-overlay")) return;
   const overlay = document.createElement("div");
@@ -436,12 +376,11 @@ function showFinish() {
   });
 }
 
-// ---- 画面サイズ調整 ----
+// ---- 画面サイズ ----
 function setAppHeight() {
   const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   document.getElementById("app").style.height = h + "px";
 }
-
 function fitGridToScreen() {
   getGridSize();
   setAppHeight();
@@ -460,7 +399,6 @@ function fitGridToScreen() {
   grid.style.width               = (COLS * size + (COLS - 1) * gap) + "px";
   grid.style.height              = (ROWS * size + (ROWS - 1) * gap) + "px";
 }
-
 window.addEventListener("resize", fitGridToScreen);
 window.addEventListener("orientationchange", fitGridToScreen);
 if (window.visualViewport) window.visualViewport.addEventListener("resize", fitGridToScreen);
@@ -492,14 +430,11 @@ function resetField() {
   tiles = buildField();
   cancelHold();
   dragging = false;
-  fieldEl = null; // イベント再設定のためリセット
   renderField();
   renderZukan();
 }
 
-// ---- 共通イベント ----
-document.addEventListener("contextmenu", (e) => e.preventDefault());
-
+// ---- 図鑑・リセットボタン ----
 document.getElementById("zukanOpenBtn").addEventListener("click", () => {
   document.getElementById("modalOverlay").classList.add("open");
 });
@@ -511,4 +446,6 @@ document.getElementById("modalOverlay").addEventListener("click", (e) => {
 });
 document.getElementById("resetBtn").addEventListener("click", resetField);
 
-resetField();resetField();
+// ---- 起動 ----
+resetField();
+setupEvents(); // イベントは一度だけ設定
