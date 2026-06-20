@@ -150,8 +150,10 @@ function getTileEl(id) {
   return document.querySelector(`.tile[data-tile-id="${id}"]`);
 }
 
+// ヒント：判定エリアを少し広げる
 function getTileIdFromPoint(x, y) {
-  const el = document.elementFromPoint(x, y);
+  // 指の周り10ピクセルくらいを探すように調整
+  const el = document.elementFromPoint(x, y) || document.elementFromPoint(x + 10, y + 10);
   const tileEl = el && el.closest && el.closest(".tile");
   return tileEl ? Number(tileEl.dataset.tileId) : null;
 }
@@ -314,17 +316,31 @@ function handleStart(id) {
   if (canDragPull(tile)) { dragging = true; pullWeed(id); }
 }
 
+// handleMove の改善案
 function handleMove(id) {
-  // 同じ場所をなぞっている間は処理をスキップして軽くする
+  // すでに処理済みなら無視（これはそのまま）
   if (id === lastProcessedId) return;
   lastProcessedId = id;
 
   const tile = tiles.find((t) => t.id === id);
-  if (!tile || (tile.cleared && tile.type !== "veggie")) return;
-  if (tile.type === "rare") { triggerResist(id); dragging = false; return; }
-  if (isProtected(tile)) { triggerShake(id); dragging = false; return; }
-  if (canDragPull(tile)) pullWeed(id);
+  if (!tile) return;
+
+  // 1. ここで「通り過ぎた場所」の判定を厳しくする
+  if (tile.cleared && tile.type !== "veggie") return;
+  
+  // 2. もしなぞっている間に「これは抜けないよ！」という場所にぶつかったら
+  if (isProtected(tile)) {
+    triggerShake(id);
+    dragging = false;
+    return;
+  }
+  
+  // 3. なぞり直した時にもスムーズに反応するように
+  if (canDragPull(tile)) {
+    pullWeed(id);
+  }
 }
+
 
 // ---- フィールドのイベント設定(タッチ優先、PC時はpointer) ----
 let fieldEl = null;
