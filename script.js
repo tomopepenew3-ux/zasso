@@ -31,6 +31,9 @@ let dragging = false;
 let holdState = null;
 let touchActive = false; // タッチ操作中はpointer eventを無視するフラグ
 let audioUnlocked = false;
+let lastProcessedId = null; 
+
+
 
 const sfxPon = new Audio("pon.mp3");
 sfxPon.preload = "auto";
@@ -38,7 +41,6 @@ sfxPon.preload = "auto";
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // ---- 音声 ----
-// ここに新しい定数と、それを使う関数を並べて書きます
 const sfxPon1 = new Audio("pon1.mp3");
 const sfxPon2 = new Audio("pon2.mp3");
 sfxPon1.preload = "auto";
@@ -49,7 +51,6 @@ let useFirstPon = true;
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  // ここは必要に応じて1つ目の音源だけ鳴らすなど工夫してもOKです
   sfxPon1.play().then(() => { sfxPon1.pause(); sfxPon1.currentTime = 0; }).catch(() => {});
 }
 
@@ -61,7 +62,6 @@ function playPon() {
   target.currentTime = 0;
   target.play().catch(() => {});
 }
-
 
 // ---- タイル状態の判定ヘルパー ----
 function isWeedCover(tile)    { return tile.type === "veggie" && tile.weedCover; }
@@ -263,6 +263,7 @@ function pullRare(id) {
 }
 
 function cancelHold() {
+  lastProcessedId = null; // ここを足す！
   if (holdState) clearInterval(holdState.interval);
   holdState = null;
   hideGauge();
@@ -303,6 +304,7 @@ function triggerResist(id) {
 
 // ---- タッチ/ポインタ 共通ロジック ----
 function handleStart(id) {
+  lastProcessedId = id;
   unlockAudio();
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -313,6 +315,10 @@ function handleStart(id) {
 }
 
 function handleMove(id) {
+  // 同じ場所をなぞっている間は処理をスキップして軽くする
+  if (id === lastProcessedId) return;
+  lastProcessedId = id;
+
   const tile = tiles.find((t) => t.id === id);
   if (!tile || (tile.cleared && tile.type !== "veggie")) return;
   if (tile.type === "rare") { triggerResist(id); dragging = false; return; }
