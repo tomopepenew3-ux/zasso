@@ -315,25 +315,29 @@ function handleStart(id) {
 }
 
 function handleMove(id) {
-  // ガードを外して、常に現在のidを判定対象にする
-  const tile = tiles.find((t) => t.id === id);
+  // もしidが取れなかったら何もしない
+  if (id === null) return;
   
-  // 基本的なチェックだけ残す
-  if (!tile || (tile.cleared && tile.type !== "veggie")) return;
+  // 今触っている場所が、さっきと同じなら処理しない（これで連続のムダな計算を省く）
+  if (id === lastProcessedId) return;
 
-  // レア草の判定
-  if (tile.type === "rare") { 
-    triggerResist(id); 
-    dragging = false; 
-    return; 
-  }
+  const tile = tiles.find((t) => t.id === id);
+  if (!tile) return;
+
+  // 1. さっきの場所を更新
+  lastProcessedId = id;
+
+  // 2. 状態判定
+  if (tile.cleared && tile.type !== "veggie") return;
+  if (tile.type === "rare") { triggerResist(id); dragging = false; return; }
+  if (isProtected(tile)) { triggerShake(id); dragging = false; return; }
   
-  // 保護されている草の判定
-  if (isProtected(tile)) { 
-    triggerShake(id); 
-    dragging = false; 
-    return; 
+  // 3. 抜く処理
+  if (canDragPull(tile)) {
+    pullWeed(id);
   }
+}
+
   
   // 草を抜く処理
   if (canDragPull(tile)) {
