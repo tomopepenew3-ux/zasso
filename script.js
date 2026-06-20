@@ -12,7 +12,7 @@ const RARE_WEEDS = [
   { name: "なんか耳っぽい草",       desc: "風の音などを集めているように揺れている。",         icon: RARE_ICONS[3] },
   { name: "ウワァー！ってなる草",   desc: "引き抜くと悲鳴のような変な音が鳴る。",             icon: RARE_ICONS[4] },
   { name: "イヤァー！ってなる草",   desc: "近づくとしおれて、なんだかこちらまで悲しくなる。", icon: RARE_ICONS[5] },
-  { name: "夜中に踊るらしい草",     desc: "真夜中になるとふわふわ揺れて踊り出す。",           icon: RARE_ICONS[6] },
+  { name: "夜中に踊るらしいh草",     desc: "真夜中になるとふわふわ揺れて踊り出す。",           icon: RARE_ICONS[6] },
   { name: "エコな説明をする草",     desc: "近づくと図や記号でいろんな説明をしてくれる。",     icon: RARE_ICONS[7] },
   { name: "うるさい草",             desc: "いろんなことをずっとしゃべり続けている。",         icon: RARE_ICONS[8] },
 ];
