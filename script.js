@@ -304,11 +304,12 @@ function triggerResist(id) {
 
 // ---- タッチ/ポインタ 共通ロジック ----
 function handleStart(id) {
+  lastProcessedId = id;
   unlockAudio();
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
-  
-  if (isProtected(tile)) { triggerShake(id); dragging = false; return; }
+  if (tile.cleared && tile.type !== "veggie") return;
+  if (isProtected(tile)) { triggerShake(id); return; }
   if (tile.type === "rare") { startHold(id); return; }
   if (canDragPull(tile)) { dragging = true; pullWeed(id); }
 }
@@ -328,8 +329,8 @@ function handleMove(id) {
 
   // 2. 状態判定
   if (tile.cleared && tile.type !== "veggie") return;
-  if (tile.type === "rare") { triggerResist(id); dragging = false; return; }
-  if (isProtected(tile)) { triggerShake(id); dragging = false; return; }
+  if (tile.type === "rare") { triggerResist(id); return; }
+  if (isProtected(tile)) { triggerShake(id); return; }
   
   // 3. 抜く処理
   if (canDragPull(tile)) {
@@ -394,6 +395,13 @@ function setupFieldEvents() {
     const id = getTileIdFromPoint(e.clientX, e.clientY);
     if (id !== null) handleMove(id);
   });
+  
+  document.addEventListener("touchmove", (e) => {
+  if (!dragging || !e.touches[0]) return;
+  const t = e.touches[0];
+  const id = getTileIdFromPoint(t.clientX, t.clientY);
+  if (id !== null) handleMove(id);
+}, { passive: true });
 
   document.addEventListener("pointerup", () => {
     if (touchActive) return;
@@ -406,6 +414,8 @@ function setupFieldEvents() {
     dragging = false;
     cancelHold();
   });
+  document.addEventListener("contextmenu", (e) => e.preventDefault()
+  );
 }
 
 // ---- FINISH! 演出 ----
