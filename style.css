@@ -33,10 +33,7 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  max-width: 960px;
-  margin: 0 auto;
 }
-[hidden] { display: none !important; }
 
 /* ヘッダー */
 .header {
@@ -66,10 +63,13 @@ html, body {
   width: 100%; height: 12px; border-radius: 999px;
   background: var(--progress-track); overflow: hidden;
 }
-.progress-fill { height: 100%; background: var(--progress-fill); transition: width 0.25s ease; width: 0%; }
+.progress-fill {
+  height: 100%; background: var(--progress-fill);
+  transition: width 0.25s ease; width: 0%;
+}
 .hint { color: var(--progress-fill); font-size: 11px; margin-top: 4px; }
 
-/* フィールド: グリッドをflex中央寄せで浮かせない */
+/* フィールド */
 .field {
   flex: 1; margin: 12px 16px; border-radius: 18px;
   background: linear-gradient(135deg, var(--field-from), var(--field-to));
@@ -77,7 +77,6 @@ html, body {
   overflow: hidden;
   display: flex; align-items: center; justify-content: center;
 }
-/* グリッドの幅・高さ・列数はJS(fitGridToScreen)が正確なpxで指定する */
 .grid { display: grid; gap: 4px; }
 
 /* タイル */
@@ -89,19 +88,14 @@ html, body {
   font-size: 18px;
   touch-action: none;
 }
-.tile-emoji {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-}
-.tile.cleared        { background: var(--soil-light); touch-action: pan-y; }
-.tile.veggie-covered { background: var(--tile-bg); }
-.tile.veggie-revealed{ background: var(--soil-light); }
-.tile.rare-glow      { box-shadow: 0 0 10px 2px var(--rare-glow); }
+.tile.cleared         { background: var(--soil-light); touch-action: pan-y; }
+.tile.veggie-revealed { background: var(--soil-light); }
+.tile.rare-glow       { box-shadow: 0 0 10px 2px var(--rare-glow); }
 .tile.rare-glow .tile-emoji { filter: drop-shadow(0 0 4px gold); animation: pulse 1.4s ease-in-out infinite; }
 .tile.shake  { animation: tile-shake 0.3s ease-in-out; }
 .tile.resist { animation: resist-flash 0.25s ease-in-out; }
 
-/* フロートテキスト(bodyに貼り付けてfixedで表示) */
+/* フロートテキスト */
 .float-effect {
   position: fixed;
   transform: translateX(-50%);
@@ -110,6 +104,27 @@ html, body {
   white-space: nowrap; pointer-events: none;
   animation: float-up 0.75s ease-out forwards;
   z-index: 100;
+}
+
+/* 農園発掘メッセージ(農園の上にスーッと出てフェード) */
+.veggie-msg {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  font-size: 16px; font-weight: 700;
+  color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+  white-space: nowrap; pointer-events: none;
+  z-index: 150;
+  animation: veggie-fade 2.2s ease-out forwards;
+}
+
+/* 庭全体に出る大きいメッセージ(採取完了など) */
+.field-msg {
+  position: fixed;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 900;
+  color: #fff; text-shadow: 0 3px 12px rgba(0,0,0,0.7);
+  pointer-events: none; z-index: 150;
+  animation: field-fade 2.5s ease-out forwards;
 }
 
 /* 長押しゲージオーバーレイ */
@@ -175,7 +190,7 @@ html, body {
 .zukan-desc { font-size: 10px; color: var(--soil-dark); margin-top: 4px; line-height: 1.4; }
 .zukan-pulls { font-size: 10px; font-weight: 700; color: var(--forest); margin-top: 6px; }
 
-/* FINISH! 演出 */
+/* FINISH! */
 #finish-overlay {
   position: fixed; inset: 0; z-index: 300;
   background: rgba(0,0,0,0.65);
@@ -201,6 +216,19 @@ html, body {
   0%   { opacity: 1; transform: translateX(-50%) translateY(0); }
   100% { opacity: 0; transform: translateX(-50%) translateY(-28px); }
 }
+@keyframes veggie-fade {
+  0%   { opacity: 0; transform: translate(-50%, -50%) translateY(8px); }
+  20%  { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) translateY(-16px); }
+}
+@keyframes field-fade {
+  0%   { opacity: 0; transform: scale(0.8); }
+  15%  { opacity: 1; transform: scale(1.05); }
+  25%  { transform: scale(1); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; }
+}
 @keyframes tile-shake {
   0%, 100% { transform: translateX(0); }
   25%       { transform: translateX(-3px); }
@@ -217,4 +245,39 @@ html, body {
 @keyframes box-pop {
   from { transform: scale(0.6); opacity: 0; }
   to   { transform: scale(1);   opacity: 1; }
+}
+
+/* 農園の上にふわっと出る発見メッセージ */
+.veggie-msg {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  font-size: 15px; font-weight: 700;
+  color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+  white-space: nowrap; pointer-events: none;
+  animation: veggie-fade 2.2s ease-out forwards;
+  z-index: 150;
+}
+@keyframes veggie-fade {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  20%  { opacity: 1; transform: translate(-50%, -60%) scale(1.05); }
+  70%  { opacity: 1; transform: translate(-50%, -70%); }
+  100% { opacity: 0; transform: translate(-50%, -80%); }
+}
+
+/* 採取完了などを庭の上に大きく表示 */
+#field-msg {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 26px; font-weight: 900;
+  color: #fff7d6; text-shadow: 0 3px 12px rgba(0,0,0,0.6);
+  pointer-events: none; white-space: nowrap;
+  animation: field-msg-anim 2.5s ease-out forwards;
+  z-index: 20;
+}
+@keyframes field-msg-anim {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  15%  { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  70%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
 }
