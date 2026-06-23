@@ -39,52 +39,62 @@ let lastX = null;
 let lastY = null;
 let tileAreas = [];
 
-// ★スワイプ中に音が消えるバグを粉砕する「32連装・一斉アンロック砲」
-const AUDIO_POOL_SIZE = 32;
-const PON_POOL = [];
-let poolIndex = 0;
-let audioUnlocked = false;
+// ★超軽量・完全同期のプロ仕様Web Audioシステム
+let audioCtx = null;
+let ponBuffer = null;
 
-// 起動時に32個の独立したオーディオプレイヤーを生成
-for (let i = 0; i < AUDIO_POOL_SIZE; i++) {
-  const a = new Audio("pon.mp3");
-  a.preload = "auto";
-  PON_POOL.push(a);
+function initAudioSystem() {
+  if (audioCtx) return;
+  try {
+    const ContextClass = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new ContextClass();
+    
+    // アプリ起動時にあらかじめ「pon.mp3」をメモリに超高速デコードして格納
+    fetch("pon.mp3")
+      .then(res => res.arrayBuffer())
+      .then(data => audioCtx.decodeAudioData(data))
+      .then(buffer => {
+        ponBuffer = buffer;
+      })
+      .catch(err => console.error("音源ファイルの読み込みに失敗しました:", err));
+  } catch (e) {
+    console.error("Web Audio API非対応環境です", e);
+  }
 }
+// 起動と同時にロード開始
+initAudioSystem();
 
-// ユーザーが画面に触れた「最初の一瞬」で、32個全ての再生許可をブラウザからブチ抜く
-function unlockAllAudio() {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
+// 指が触れた瞬間にブラウザの音響セキュリティを「空再生」で完全破壊する関数
+function forceUnlockAudio() {
+  if (!audioCtx) return;
   
-  PON_POOL.forEach(a => {
-    // スマホのセキュリティ制限を解除するため、一瞬だけ再生して即一時停止・巻き戻す
-    const p = a.play();
-    if (p !== undefined) {
-      p.then(() => {
-        a.pause();
-        a.currentTime = 0;
-      }).catch(() => {
-        // 万が一失敗したら、次のタッチでやり直せるようにフラグを戻す
-        audioUnlocked = false;
-      });
-    }
-  });
+  // 眠っているオーディオシステムを叩き起こす
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  
+  // 【最重要】iOS等の「スワイプ中の音出しブロック」を騙すため、
+  // 最初のタッチイベント内で無音のダミーバッファを実際に1回再生させる
+  try {
+    const dummySource = audioCtx.createBufferSource();
+    dummySource.buffer = audioCtx.createBuffer(1, 1, 22050);
+    dummySource.connect(audioCtx.destination);
+    dummySource.start(0);
+  } catch (e) {}
 }
 
 function playPon() {
-  unlockAllAudio(); // 念のためここでもチェック
+  if (!audioCtx || !ponBuffer) return; // まだロードが未完了の場合は安全スルー
   
-  if (PON_POOL.length === 0) return;
-  
-  // 32個のプレイヤーから順番に、前の音を消さずに重ねて「すぽぽぽぽん」と鳴らす
-  const s = PON_POOL[poolIndex];
   try {
-    s.currentTime = 0;
-    s.play().catch(() => {});
-  } catch (e) {}
-  
-  poolIndex = (poolIndex + 1) % AUDIO_POOL_SIZE;
+    // 毎回使い捨ての超軽量オーディオノードを生成（CPU負荷ほぼゼロ、遅延ゼロ、無限に音が重なる）
+    const source = audioCtx.createBufferSource();
+    source.buffer = ponBuffer;
+    source.connect(audioCtx.destination);
+    source.start(0);
+  } catch (e) {
+    console.error("再生エラー:", e);
+  }
 }
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -375,7 +385,10 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  unlockAllAudio(); // ★タッチされた瞬間に32個全部のスピーカーの鍵を開ける！
+  
+  // ★画面に指が触れた瞬間、ブラウザの音響制限を完全に叩き起こす
+  forceUnlockAudio(); 
+  
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
   
