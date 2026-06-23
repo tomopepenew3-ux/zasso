@@ -21,6 +21,7 @@ const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
 const HOLD_DURATION = 1100;
+const TILE_GAP = 4; // タイルの隙間
 
 let COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
 let ROWS = TOTAL_CELLS / COLS;
@@ -34,6 +35,7 @@ let veggieFoundCount = 0;
 
 let lastX = null;
 let lastY = null;
+let tileSize = 0; // 現在の1マスのサイズを記憶する変数
 
 const PON_POOL = Array.from({ length: 8 }, () => {
   const a = new Audio("pon.mp3");
@@ -116,7 +118,7 @@ function renderField() {
     const div = document.createElement("div");
     div.className = "tile";
     div.dataset.tileId = tile.id;
-    div.style.touchAction = "none"; // ★ブラウザのスクロール誤爆を完全に防止
+    div.style.touchAction = "none";
     if (tile.type === "veggie") {
       div.innerHTML = `
         <span class="tile-emoji weed-cover">${tile.emoji}</span>
@@ -142,7 +144,7 @@ function updateTileVisual(id) {
   const tile = tiles.find((t) => t.id === id);
   const el = getTileEl(id);
   if (!tile || !el) return;
-  el.style.touchAction = "none"; // ★CSSのpan-yをJS側から強制的に上書きして無効化
+  el.style.touchAction = "none";
   
   const isSoil = tile.cleared && tile.type !== "veggie";
   el.classList.toggle("cleared",         isSoil);
@@ -312,11 +314,25 @@ function triggerResist(id) {
   setTimeout(() => { el.classList.remove("resist"); delete el.dataset.resisting; }, 250);
 }
 
+// ★大幅軽量化：重い判定を廃止し、座標の数学計算でタイルを一瞬で特定！
 function checkAndPullAt(x, y) {
-  const el = document.elementFromPoint(x, y);
-  const tileEl = el && el.closest(".tile");
-  if (!tileEl) return;
-  const id = Number(tileEl.dataset.tileId);
+  const gridEl = document.getElementById("grid");
+  if (!gridEl || tileSize <= 0) return;
+  
+  const rect = gridEl.getBoundingClientRect();
+  const localX = x - rect.left;
+  const localY = y - rect.top;
+  
+  // 外側を触っている場合は無視
+  if (localX < 0 || localX >= rect.width || localY < 0 || localY >= rect.height) return;
+  
+  // タッチ座標から、何列目(c)・何行目(r)のマスかを一瞬で超高速計算
+  const c = Math.floor(localX / (tileSize + TILE_GAP));
+  const r = Math.floor(localY / (tileSize + TILE_GAP));
+  
+  if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return;
+  
+  const id = r * COLS + c;
   const tile = tiles.find((t) => t.id === id);
   if (!tile || (tile.cleared && tile.type !== "veggie")) return;
   if (tile.type === "rare") { triggerResist(id); return; }
@@ -342,6 +358,7 @@ function onTileDown(e, id) {
   }
 }
 
+// ★補間ステップの間隔を8pxに縮めて、超高速スワイプでも隙間なく判定するように強化
 function onPointerMoveGlobal(e) {
   if (!dragging) return;
   const currentX = e.clientX;
@@ -352,7 +369,7 @@ function onPointerMoveGlobal(e) {
     const dy = currentY - lastY;
     const distance = Math.sqrt(dx * dx + dy * dy);
     
-    const steps = Math.ceil(distance / 15);
+    const steps = Math.ceil(distance / 8); 
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const x = lastX + dx * t;
@@ -401,13 +418,16 @@ function fitGridToScreen() {
   setAppHeight();
   const field = document.getElementById("field");
   const grid  = document.getElementById("grid");
-  const gap = 4, pad = 16, minSize = 20;
+  const gap = TILE_GAP, pad = 16, minSize = 20;
   const availW = field.clientWidth  - pad;
   const availH = field.clientHeight - pad;
   const size = Math.max(Math.min(
     (availW - gap * (COLS - 1)) / COLS,
     (availH - gap * (ROWS - 1)) / ROWS
   ), minSize);
+  
+  tileSize = size; // グローバルにサイズを記憶
+  
   grid.style.gridTemplateColumns = `repeat(${COLS}, ${size}px)`;
   grid.style.gridAutoRows        = `${size}px`;
   grid.style.gap                 = `${gap}px`;
@@ -449,7 +469,6 @@ function resetField() {
   renderZukan();
 }
 
-// ★競合していたtouchmoveイベントを完全削除し、最先端のpointerイベントのみに統一
 document.addEventListener("pointermove",   onPointerMoveGlobal);
 document.addEventListener("pointerup",     onPointerUpGlobal);
 document.addEventListener("pointercancel", onPointerUpGlobal);
