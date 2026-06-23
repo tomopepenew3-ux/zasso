@@ -1,6 +1,11 @@
 // ---- タイトル設定 ----
 document.title = "雑草すっぽん！";
 
+// ★【マナーモード（消音スイッチ）の挙動設定】
+// "ambient"  => スマホがマナーモード（消音）の時は、音を自動で消します（安心設計・おすすめ）
+// "playback" => スマホがマナーモードであっても、強制的に「すぽんっ！」と音を鳴らします
+const AUDIO_SESSION_MODE = "ambient";
+
 // ---- 定数 ----
 const WEED_EMOJI = ["🌱", "🍀", "🌿"];
 const FLOWER_EMOJI = ["🌷", "🌼", "🌸"];
@@ -39,7 +44,7 @@ let lastX = null;
 let lastY = null;
 let tileAreas = [];
 
-// ★超軽量・完全同期のプロ仕様Web Audioシステム
+// ---- Web Audio システム ----
 let audioCtx = null;
 let ponBuffer = null;
 
@@ -49,7 +54,12 @@ function initAudioSystem() {
     const ContextClass = window.AudioContext || window.webkitAudioContext;
     audioCtx = new ContextClass();
     
-    // アプリ起動時にあらかじめ「pon.mp3」をメモリに超高速デコードして格納
+    // iOS17以降のスマホで、マナーモードの設定を適用するコード
+    if (navigator.audioSession) {
+      navigator.audioSession.type = AUDIO_SESSION_MODE;
+    }
+    
+    // あらかじめ「pon.mp3」をメモリに超高速デコードして格納
     fetch("pon.mp3")
       .then(res => res.arrayBuffer())
       .then(data => audioCtx.decodeAudioData(data))
@@ -61,20 +71,14 @@ function initAudioSystem() {
     console.error("Web Audio API非対応環境です", e);
   }
 }
-// 起動と同時にロード開始
 initAudioSystem();
 
-// 指が触れた瞬間にブラウザの音響セキュリティを「空再生」で完全破壊する関数
+// 指が触れた瞬間にブラウザの音響制限を解除する関数
 function forceUnlockAudio() {
   if (!audioCtx) return;
-  
-  // 眠っているオーディオシステムを叩き起こす
   if (audioCtx.state === "suspended") {
     audioCtx.resume();
   }
-  
-  // 【最重要】iOS等の「スワイプ中の音出しブロック」を騙すため、
-  // 最初のタッチイベント内で無音のダミーバッファを実際に1回再生させる
   try {
     const dummySource = audioCtx.createBufferSource();
     dummySource.buffer = audioCtx.createBuffer(1, 1, 22050);
@@ -84,10 +88,8 @@ function forceUnlockAudio() {
 }
 
 function playPon() {
-  if (!audioCtx || !ponBuffer) return; // まだロードが未完了の場合は安全スルー
-  
+  if (!audioCtx || !ponBuffer) return; 
   try {
-    // 毎回使い捨ての超軽量オーディオノードを生成（CPU負荷ほぼゼロ、遅延ゼロ、無限に音が重なる）
     const source = audioCtx.createBufferSource();
     source.buffer = ponBuffer;
     source.connect(audioCtx.destination);
@@ -385,8 +387,6 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  
-  // ★画面に指が触れた瞬間、ブラウザの音響制限を完全に叩き起こす
   forceUnlockAudio(); 
   
   const tile = tiles.find((t) => t.id === id);
