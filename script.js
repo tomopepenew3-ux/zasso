@@ -21,7 +21,7 @@ const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
 const HOLD_DURATION = 1100;
-const TILE_GAP = 4; // タイルの隙間
+const TILE_GAP = 4;
 
 let COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
 let ROWS = TOTAL_CELLS / COLS;
@@ -35,7 +35,7 @@ let veggieFoundCount = 0;
 
 let lastX = null;
 let lastY = null;
-let tileSize = 0; // 現在の1マスのサイズを記憶する変数
+let tileAreas = []; // ★全マスの正確な画面座標を記憶するカンペ用配列
 
 const PON_POOL = Array.from({ length: 8 }, () => {
   const a = new Audio("pon.mp3");
@@ -314,30 +314,34 @@ function triggerResist(id) {
   setTimeout(() => { el.classList.remove("resist"); delete el.dataset.resisting; }, 250);
 }
 
-// ★大幅軽量化：重い判定を廃止し、座標の数学計算でタイルを一瞬で特定！
+// ★画期的変更：カンペ配列（tileAreas）から指の下にあるマスを100%確実に特定する（ズレ絶対ゼロ）
 function checkAndPullAt(x, y) {
-  const gridEl = document.getElementById("grid");
-  if (!gridEl || tileSize <= 0) return;
+  const found = tileAreas.find(a => x >= a.left && x <= a.right && y >= a.top && y <= a.bottom);
+  if (!found) return;
   
-  const rect = gridEl.getBoundingClientRect();
-  const localX = x - rect.left;
-  const localY = y - rect.top;
-  
-  // 外側を触っている場合は無視
-  if (localX < 0 || localX >= rect.width || localY < 0 || localY >= rect.height) return;
-  
-  // タッチ座標から、何列目(c)・何行目(r)のマスかを一瞬で超高速計算
-  const c = Math.floor(localX / (tileSize + TILE_GAP));
-  const r = Math.floor(localY / (tileSize + TILE_GAP));
-  
-  if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return;
-  
-  const id = r * COLS + c;
+  const id = found.id;
   const tile = tiles.find((t) => t.id === id);
   if (!tile || (tile.cleared && tile.type !== "veggie")) return;
   if (tile.type === "rare") { triggerResist(id); return; }
   if (isProtected(tile))   { triggerShake(id);  return; }
   if (canDragPull(tile))   pullWeed(id);
+}
+
+// ★画面上の全マスの「絶対的な位置」をカンペ（配列）に一発保存する超重要関数
+function cacheTileAreas() {
+  tileAreas = [];
+  tiles.forEach((tile) => {
+    const el = getTileEl(tile.id);
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    tileAreas.push({
+      id: tile.id,
+      left: rect.left + window.scrollX,
+      right: rect.right + window.scrollX,
+      top: rect.top + window.scrollY,
+      bottom: rect.bottom + window.scrollY
+    });
+  });
 }
 
 function onTileDown(e, id) {
@@ -350,19 +354,18 @@ function onTileDown(e, id) {
   if (tile.type === "rare") { startHold(id); return; }
   
   dragging = true; 
-  lastX = e.clientX;
-  lastY = e.clientY;
+  lastX = e.pageX; // 絶対座標系に変更してスクロール誤差も完全カット
+  lastY = e.pageY;
   
   if (canDragPull(tile)) { 
     pullWeed(id); 
   }
 }
 
-// ★補間ステップの間隔を8pxに縮めて、超高速スワイプでも隙間なく判定するように強化
 function onPointerMoveGlobal(e) {
   if (!dragging) return;
-  const currentX = e.clientX;
-  const currentY = e.clientY;
+  const currentX = e.pageX;
+  const currentY = e.pageY;
 
   if (lastX !== null && lastY !== null) {
     const dx = currentX - lastX;
@@ -426,13 +429,14 @@ function fitGridToScreen() {
     (availH - gap * (ROWS - 1)) / ROWS
   ), minSize);
   
-  tileSize = size; // グローバルにサイズを記憶
-  
   grid.style.gridTemplateColumns = `repeat(${COLS}, ${size}px)`;
   grid.style.gridAutoRows        = `${size}px`;
   grid.style.gap                 = `${gap}px`;
   grid.style.width               = (COLS * size + (COLS - 1) * gap) + "px";
   grid.style.height              = (ROWS * size + (ROWS - 1) * gap) + "px";
+
+  // ★描画が確定した直後にカンペ（座標情報）を最新に更新する
+  setTimeout(cacheTileAreas, 0);
 }
 
 window.addEventListener("resize", fitGridToScreen);
