@@ -39,46 +39,52 @@ let lastX = null;
 let lastY = null;
 let tileAreas = [];
 
-// ★音ゲー用・超低遅延オーディオシステムへの変更
-let audioCtx = null;
-let ponBuffer = null;
+// ★スワイプ中に音が消えるバグを粉砕する「32連装・一斉アンロック砲」
+const AUDIO_POOL_SIZE = 32;
+const PON_POOL = [];
+let poolIndex = 0;
+let audioUnlocked = false;
 
-function initAudioSystem() {
-  if (audioCtx) return;
-  try {
-    const ContextClass = window.AudioContext || window.webkitAudioContext;
-    audioCtx = new ContextClass();
-    
-    // バックグラウンドで音源ファイルをメモリに直ロード
-    fetch("pon.mp3")
-      .then(res => res.arrayBuffer())
-      .then(data => audioCtx.decodeAudioData(data))
-      .then(buffer => {
-        ponBuffer = buffer;
-      })
-      .catch(err => console.error("音源ファイルの読み込みに失敗しました（パスやサーバーを確認してください）:", err));
-  } catch (e) {
-    console.error("Web Audio API に対応していないブラウザです", e);
-  }
+// 起動時に32個の独立したオーディオプレイヤーを生成
+for (let i = 0; i < AUDIO_POOL_SIZE; i++) {
+  const a = new Audio("pon.mp3");
+  a.preload = "auto";
+  PON_POOL.push(a);
 }
-// 起動時にロードを開始しておく
-initAudioSystem();
 
-function unlockAudio() {
-  if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
+// ユーザーが画面に触れた「最初の一瞬」で、32個全ての再生許可をブラウザからブチ抜く
+function unlockAllAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  
+  PON_POOL.forEach(a => {
+    // スマホのセキュリティ制限を解除するため、一瞬だけ再生して即一時停止・巻き戻す
+    const p = a.play();
+    if (p !== undefined) {
+      p.then(() => {
+        a.pause();
+        a.currentTime = 0;
+      }).catch(() => {
+        // 万が一失敗したら、次のタッチでやり直せるようにフラグを戻す
+        audioUnlocked = false;
+      });
+    }
+  });
 }
 
 function playPon() {
-  unlockAudio();
-  if (!audioCtx || !ponBuffer) return; // まだロードが終わっていない場合は無視
+  unlockAllAudio(); // 念のためここでもチェック
   
-  // ゼロミリ秒で音を鳴らすための最速ノード作成
-  const source = audioCtx.createBufferSource();
-  source.buffer = ponBuffer;
-  source.connect(audioCtx.destination);
-  source.start(0);
+  if (PON_POOL.length === 0) return;
+  
+  // 32個のプレイヤーから順番に、前の音を消さずに重ねて「すぽぽぽぽん」と鳴らす
+  const s = PON_POOL[poolIndex];
+  try {
+    s.currentTime = 0;
+    s.play().catch(() => {});
+  } catch (e) {}
+  
+  poolIndex = (poolIndex + 1) % AUDIO_POOL_SIZE;
 }
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -106,8 +112,8 @@ function buildField() {
   const anchorRow = Math.floor(Math.random() * (ROWS - VEG_H + 1));
   const anchorCol = Math.floor(Math.random() * (COLS - VEG_W + 1));
   for (let r = 0; r < VEG_H; r++)
-    for (let c = 0; c < VEG_W; c++)
-      grid2d[anchorRow + r][anchorCol + c] = "veggie";
+    for (let c = 0; c < COLS; c++)
+      if (anchorRow + r < ROWS && anchorCol + c < COLS) grid2d[anchorRow + r][anchorCol + c] = "veggie";
 
   const pool = [];
   for (let i = 0; i < COUNTS.weed;   i++) pool.push("weed");
@@ -268,7 +274,7 @@ function pullWeed(id) {
   if (tile.type === "weed") {
     tile.cleared = true;
     playPon();
-    addFloatEffect(id, "すぽんっ！"); // エフェクトテキストも可愛く変更！
+    addFloatEffect(id, "すぽんっ！");
   } else if (isWeedCover(tile)) {
     tile.weedCover = false;
     playPon();
@@ -369,8 +375,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  initAudioSystem(); // 最初のタッチで安全にオーディオ起動
-  unlockAudio();
+  unlockAllAudio(); // ★タッチされた瞬間に32個全部のスピーカーの鍵を開ける！
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
   
@@ -488,7 +493,6 @@ function renderZukan() {
 }
 
 function applyAppTitle() {
-  // 画面上にある見出し(h1)を自動で『雑草すっぽん！』に書き換える
   const titleEl = document.querySelector("h1") || document.querySelector(".title");
   if (titleEl) titleEl.textContent = "雑草すっぽん！";
 }
