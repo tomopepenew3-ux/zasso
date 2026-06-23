@@ -1,11 +1,6 @@
 // ---- タイトル設定 ----
 document.title = "雑草すっぽん！";
 
-// ★【マナーモード（消音スイッチ）の挙動設定】
-// "ambient"  => スマホがマナーモード（消音）の時は、音を自動で消します（安心設計・おすすめ）
-// "playback" => スマホがマナーモードであっても、強制的に「すぽんっ！」と音を鳴らします
-const AUDIO_SESSION_MODE = "ambient";
-
 // ---- 定数 ----
 const WEED_EMOJI = ["🌱", "🍀", "🌿"];
 const FLOWER_EMOJI = ["🌷", "🌼", "🌸"];
@@ -44,20 +39,16 @@ let lastX = null;
 let lastY = null;
 let tileAreas = [];
 
-// ---- Web Audio システム ----
+// ---- 音響・ミュートシステム ----
 let audioCtx = null;
 let ponBuffer = null;
+let isMuted = false; // アプリ内のミュート状態管理
 
 function initAudioSystem() {
   if (audioCtx) return;
   try {
     const ContextClass = window.AudioContext || window.webkitAudioContext;
     audioCtx = new ContextClass();
-    
-    // iOS17以降のスマホで、マナーモードの設定を適用するコード
-    if (navigator.audioSession) {
-      navigator.audioSession.type = AUDIO_SESSION_MODE;
-    }
     
     // あらかじめ「pon.mp3」をメモリに超高速デコードして格納
     fetch("pon.mp3")
@@ -72,6 +63,29 @@ function initAudioSystem() {
   }
 }
 initAudioSystem();
+
+// 画面に「音あり/消音」ボタンを自動でねじ込む関数
+function setupMuteButton() {
+  if (document.getElementById("muteBtn")) return; // すでにボタンがあればスキップ
+  const resetBtn = document.getElementById("resetBtn");
+  if (!resetBtn) return;
+  
+  const muteBtn = document.createElement("button");
+  muteBtn.id = "muteBtn";
+  muteBtn.className = resetBtn.className; // 元のリセットボタンと同じ綺麗なデザインをコピー
+  muteBtn.textContent = "🔊 音あり";
+  muteBtn.style.marginRight = "8px"; // ボタンの間に少し隙間をあける
+  
+  muteBtn.addEventListener("click", () => {
+    isMuted = !isMuted;
+    muteBtn.textContent = isMuted ? "🔇 消音" : "🔊 音あり";
+    // 消音中はちょっとボタンを薄くして分かりやすくする
+    muteBtn.style.opacity = isMuted ? "0.6" : "1.0";
+  });
+  
+  // リセットボタンの直前に挿入
+  resetBtn.parentNode.insertBefore(muteBtn, resetBtn);
+}
 
 // 指が触れた瞬間にブラウザの音響制限を解除する関数
 function forceUnlockAudio() {
@@ -88,7 +102,9 @@ function forceUnlockAudio() {
 }
 
 function playPon() {
+  if (isMuted) return; // ★画面で「消音」にしている時は絶対に音を出さない！
   if (!audioCtx || !ponBuffer) return; 
+  
   try {
     const source = audioCtx.createBufferSource();
     source.buffer = ponBuffer;
@@ -177,6 +193,7 @@ function renderField() {
   document.getElementById("totalClearable").textContent = TOTAL_CLEARABLE;
   updateCounters();
   fitGridToScreen();
+  setupMuteButton(); // フィールド生成時にミュートボタンを設置
 }
 
 function getTileEl(id) {
