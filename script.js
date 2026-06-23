@@ -32,6 +32,10 @@ let holdState = null;
 let audioUnlocked = false;
 let veggieFoundCount = 0; // 発掘した野菜の数
 
+// ★一筆書きのすり抜けを防ぐための、前回の指の座標を記録する変数
+let lastX = null;
+let lastY = null;
+
 // 音源を8個作り置き→高速連打でもぽぽぽぽん！と鳴る
 const PON_POOL = Array.from({ length: 8 }, () => {
   const a = new Audio("pon.mp3");
@@ -178,7 +182,6 @@ function showVeggieMessage(tileId, text) {
   const span = document.createElement("span");
   span.className = "veggie-msg";
   span.textContent = text;
-  // 農園ブロックの中央あたりに表示
   span.style.left = (rect.left + rect.width / 2) + "px";
   span.style.top  = (rect.top  + rect.height / 2) + "px";
   document.body.appendChild(span);
@@ -248,7 +251,6 @@ function pullWeed(id) {
     playPon();
     addFloatEffect(id, "ポンッ！");
   } else if (isWeedCover(tile)) {
-    // 野菜を発掘
     tile.weedCover = false;
     playPon();
     addFloatEffect(id, "発掘！");
@@ -274,7 +276,6 @@ function pullRare(id) {
     renderZukan();
   }
   updateTileVisual(id);
-  // 採取完了を庭の上に大きく表示
   showFieldMessage("✨ 採取完了！");
   hideGauge(true);
   updateCounters();
@@ -319,20 +320,9 @@ function triggerResist(id) {
   setTimeout(() => { el.classList.remove("resist"); delete el.dataset.resisting; }, 250);
 }
 
-function onTileDown(e, id) {
-  e.preventDefault();
-  unlockAudio();
-  const tile = tiles.find((t) => t.id === id);
-  if (!tile) return;
-  if (tile.cleared && tile.type !== "veggie") return;
-  if (isProtected(tile)) { triggerShake(id); return; }
-  if (tile.type === "rare") { startHold(id); return; }
-  if (canDragPull(tile)) { dragging = true; pullWeed(id); }
-}
-
-function onPointerMoveGlobal(e) {
-  if (!dragging) return;
-  const el = document.elementFromPoint(e.clientX, e.clientY);
+// ★指定したXY座標にあるタイルをチェックして引き抜く補助関数
+function checkAndPullAt(x, y) {
+  const el = document.elementFromPoint(x, y);
   const tileEl = el && el.closest(".tile");
   if (!tileEl) return;
   const id = Number(tileEl.dataset.tileId);
@@ -343,7 +333,58 @@ function onPointerMoveGlobal(e) {
   if (canDragPull(tile))   pullWeed(id);
 }
 
-function onPointerUpGlobal() { dragging = false; cancelHold(); }
+function onTileDown(e, id) {
+  e.preventDefault();
+  unlockAudio();
+  const tile = tiles.find((t) => t.id === id);
+  if (!tile) return;
+  if (tile.cleared && tile.type !== "veggie") return;
+  if (isProtected(tile)) { triggerShake(id); return; }
+  if (tile.type === "rare") { startHold(id); return; }
+  if (canDragPull(tile)) { 
+    dragging = true; 
+    // ★押し始めた瞬間の座標を記録
+    lastX = e.clientX || (e.touches && e.touches[0].clientX);
+    lastY = e.clientY || (e.touches && e.touches[0].clientY);
+    pullWeed(id); 
+  }
+}
+
+function onPointerMoveGlobal(e) {
+  if (!dragging) return;
+  const currentX = e.clientX;
+  const currentY = e.clientY;
+
+  // ★前回記録した位置（lastX, lastY）がある場合、その間を細かく補間して草を抜く
+  if (lastX !== null && lastY !== null) {
+    const dx = currentX - lastX;
+    const dy = currentY - lastY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // 15ピクセルごとに細かく点を打って引き抜き判定を行う
+    const steps = Math.ceil(distance / 15);
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const x = lastX + dx * t;
+      const y = lastY + dy * t;
+      checkAndPullAt(x, y);
+    }
+  } else {
+    checkAndPullAt(currentX, currentY);
+  }
+
+  // 今回の位置を記録して次に備える
+  lastX = currentX;
+  lastY = currentY;
+}
+
+function onPointerUpGlobal() { 
+  dragging = false; 
+  cancelHold(); 
+  // ★指を離したら座標をリセット
+  lastX = null; 
+  lastY = null; 
+}
 
 // ---- FINISH! ----
 function showFinish() {
@@ -429,9 +470,7 @@ document.addEventListener("pointermove", onPointerMoveGlobal);
 document.addEventListener("touchmove", (e) => {
   if (!dragging || !e.touches[0]) return;
   const t = e.touches[0];
-  const el = document.elementFromPoint(t.clientX, t.clientY);
-  const tileEl = el && el.closest(".tile");
-  if (!tileEl) return;
+  // ★途中でreturnさせず、すべての移動座標をそのまま補間処理に送るように修正
   onPointerMoveGlobal({ clientX: t.clientX, clientY: t.clientY });
 }, { passive: true });
 document.addEventListener("pointerup",     onPointerUpGlobal);
