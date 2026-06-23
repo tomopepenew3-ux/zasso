@@ -35,11 +35,15 @@ let lastX = null;
 let lastY = null;
 let tileAreas = [];
 
+// 【安全弁】メッセージの重複を物理的に絶対させないためのガードフラグ
+let hasShownVeggieCompleteMsg = false;
+
 // ---- 音響・ミュートシステム ----
 let audioCtx = null;
 let ponBuffer = null;
 let isMuted = false;
 
+// 起動時にあらかじめオーディオを準備しておく
 function initAudioSystem() {
   if (audioCtx) return;
   try {
@@ -56,16 +60,15 @@ function initAudioSystem() {
   }
 }
 
-// iOS Safariなどの自動再生制限を安全に解除する関数
+// ユーザーが画面を触った瞬間に音のロックを解除する
 function forceUnlockAudio() {
   initAudioSystem();
-  if (!audioCtx) return;
-  if (audioCtx.state === "suspended") {
+  if (audioCtx && audioCtx.state === "suspended") {
     audioCtx.resume();
   }
 }
 
-// 画面全体の通常タップで音声をアンロック（iOS対策）
+// 各種イベントに安全弁として登録
 document.addEventListener("click", forceUnlockAudio);
 document.addEventListener("touchend", forceUnlockAudio);
 
@@ -74,7 +77,6 @@ function playPon() {
   if (!audioCtx) initAudioSystem();
   if (!audioCtx) return;
   
-  // 再生直前にもサスペンド状態なら解除を試みる
   if (audioCtx.state === "suspended") {
     audioCtx.resume();
   }
@@ -115,7 +117,6 @@ function buildField() {
   const anchorRow = Math.floor(Math.random() * (ROWS - VEG_H + 1));
   const anchorCol = Math.floor(Math.random() * (COLS - VEG_W + 1));
   
-  // 【バグ修正】横一列すべて野菜になっていたループ条件を VEG_W に修正！
   for (let r = 0; r < VEG_H; r++) {
     for (let c = 0; c < VEG_W; c++) {
       if (anchorRow + r < ROWS && anchorCol + c < COLS) {
@@ -151,13 +152,23 @@ function buildField() {
   });
 }
 
-function renderField() {
-  // 【安全弁】HTMLの更新が遅れていても、JS側からタイトルを強制的に書き換える
+// 【超強力安全弁】HTMLの更新が遅れていても、画面上の「雑草ハンター」という文字を力技で全置換する関数
+function forceRenameTitle() {
   document.title = "雑草すっぽん！";
   const mainTitleEl = document.querySelector(".main-title");
-  if (mainTitleEl) {
-    mainTitleEl.textContent = "雑草すっぽん！";
+  if (mainTitleEl) mainTitleEl.textContent = "雑草すっぽん！";
+  
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+  let node;
+  while (node = walker.nextNode()) {
+    if (node.nodeValue.includes("雑草ハンター")) {
+      node.nodeValue = node.nodeValue.replace(/雑草ハンター（仮）/g, "雑草すっぽん！").replace(/雑草ハンター/g, "雑草すっぽん！");
+    }
   }
+}
+
+function renderField() {
+  forceRenameTitle(); 
 
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
@@ -288,12 +299,11 @@ function pullWeed(id) {
     playPon();
     addFloatEffect(id, "発掘！");
     
-    // 【バグ修正】実際に画面上でめくられた野菜の総数を正確にチェックするように変更
     const allVeggieRevealed = tiles.filter(t => t.type === "veggie" && !t.weedCover).length;
     if (allVeggieRevealed === 1) { 
       showVeggieMessage(id, "あれ？野菜だ！"); 
-    } else if (allVeggieRevealed === COUNTS.veggie) { 
-      // 全部の野菜（6個）をしっかり見つけてからセリフが出る
+    } else if (allVeggieRevealed === COUNTS.veggie && !hasShownVeggieCompleteMsg) { 
+      hasShownVeggieCompleteMsg = true;
       showVeggieMessage(id, "💡 家庭菜園だったのか！"); 
     }
   }
@@ -386,18 +396,24 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  // pointerdown内でのアンロックはiOSに弾かれることがあるため、ここでは再生のみ行う
+  
+  // 【超重要】ユーザーが触ったまさにその瞬間に、ブラウザの音声ロックを即時強制解除する
+  forceUnlockAudio();
+  
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
   
-  if (isProtected(tile)) { triggerShake(id); return; }
   if (tile.type === "rare") { startHold(id); return; }
   
   dragging = true; 
   lastX = e.pageX;
   lastY = e.pageY;
   
-  if (canDragPull(tile)) { pullWeed(id); }
+  if (isProtected(tile)) { 
+    triggerShake(id); 
+  } else if (canDragPull(tile)) { 
+    pullWeed(id); 
+  }
 }
 
 function onPointerMoveGlobal(e) {
@@ -505,15 +521,15 @@ function resetField() {
   tiles = buildField();
   cancelHold();
   dragging = false;
+  hasShownVeggieCompleteMsg = false; 
   renderField();
   renderZukan();
 }
 
-// ---- ミュートボタンのクリック処理 ----
 const muteBtn = document.getElementById("muteBtn");
 if (muteBtn) {
   muteBtn.addEventListener("click", () => {
-    forceUnlockAudio(); // ボタンタップ時にも強烈に音声制限を解除する
+    forceUnlockAudio(); 
     isMuted = !isMuted;
     muteBtn.textContent = isMuted ? "🔇 消音" : "🔊 音あり";
     muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
@@ -536,4 +552,6 @@ document.getElementById("modalOverlay").addEventListener("click", (e) => {
 });
 document.getElementById("resetBtn").addEventListener("click", resetField);
 
+// 起動時に即座にオーディオをセットアップ
+initAudioSystem();
 resetField();
