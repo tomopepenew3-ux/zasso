@@ -30,13 +30,11 @@ let totalPulls = {};
 let dragging = false;
 let holdState = null;
 let audioUnlocked = false;
-let veggieFoundCount = 0; // 発掘した野菜の数
+let veggieFoundCount = 0;
 
-// ★一筆書きのすり抜けを防ぐための、前回の指の座標を記録する変数
 let lastX = null;
 let lastY = null;
 
-// 音源を8個作り置き→高速連打でもぽぽぽぽん！と鳴る
 const PON_POOL = Array.from({ length: 8 }, () => {
   const a = new Audio("pon.mp3");
   a.preload = "auto";
@@ -58,7 +56,6 @@ function playPon() {
   s.play().catch(() => {});
 }
 
-// ---- 状態判定 ----
 function isWeedCover(tile)      { return tile.type === "veggie" && tile.weedCover; }
 function isRevealedVeggie(tile) { return tile.type === "veggie" && !tile.weedCover; }
 function isProtected(tile)      { return tile.type === "flower" || tile.type === "tree" || isRevealedVeggie(tile); }
@@ -74,7 +71,6 @@ function getGridSize() {
   ROWS = TOTAL_CELLS / COLS;
 }
 
-// ---- フィールド構築 ----
 function buildField() {
   getGridSize();
   const grid2d = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
@@ -113,7 +109,6 @@ function buildField() {
   });
 }
 
-// ---- 描画 ----
 function renderField() {
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
@@ -121,6 +116,7 @@ function renderField() {
     const div = document.createElement("div");
     div.className = "tile";
     div.dataset.tileId = tile.id;
+    div.style.touchAction = "none"; // ★ブラウザのスクロール誤爆を完全に防止
     if (tile.type === "veggie") {
       div.innerHTML = `
         <span class="tile-emoji weed-cover">${tile.emoji}</span>
@@ -128,7 +124,6 @@ function renderField() {
     } else {
       div.innerHTML = `<span class="tile-emoji">${tile.emoji}</span>`;
     }
-    div.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
     div.addEventListener("contextmenu",  (e) => e.preventDefault());
     div.addEventListener("pointerdown",  (e) => onTileDown(e, tile.id));
     grid.appendChild(div);
@@ -147,6 +142,8 @@ function updateTileVisual(id) {
   const tile = tiles.find((t) => t.id === id);
   const el = getTileEl(id);
   if (!tile || !el) return;
+  el.style.touchAction = "none"; // ★CSSのpan-yをJS側から強制的に上書きして無効化
+  
   const isSoil = tile.cleared && tile.type !== "veggie";
   el.classList.toggle("cleared",         isSoil);
   el.classList.toggle("veggie-revealed", isRevealedVeggie(tile));
@@ -174,7 +171,6 @@ function updateCounters() {
   if (pct >= 100) showFinish();
 }
 
-// ---- 農園の上にふわっと文字を出す ----
 function showVeggieMessage(tileId, text) {
   const el = getTileEl(tileId);
   if (!el) return;
@@ -188,7 +184,6 @@ function showVeggieMessage(tileId, text) {
   setTimeout(() => span.remove(), 2200);
 }
 
-// ---- 庭の上に採取完了を大きく出す ----
 function showFieldMessage(text) {
   const existing = document.getElementById("field-msg");
   if (existing) existing.remove();
@@ -200,7 +195,6 @@ function showFieldMessage(text) {
   setTimeout(() => div.remove(), 2500);
 }
 
-// ---- フロートエフェクト ----
 function addFloatEffect(id, text) {
   const el = getTileEl(id);
   if (!el) return;
@@ -214,7 +208,6 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-// ---- 達成率バーをゲージとして乗っ取る ----
 const gaugeOverlay = document.getElementById("gauge-overlay");
 
 function showGauge(rareEmoji) {
@@ -242,7 +235,6 @@ function hideGauge(complete) {
   updateCounters();
 }
 
-// ---- タイル操作 ----
 function pullWeed(id) {
   const tile = tiles.find((t) => t.id === id);
   if (!tile || !canDragPull(tile)) return;
@@ -320,7 +312,6 @@ function triggerResist(id) {
   setTimeout(() => { el.classList.remove("resist"); delete el.dataset.resisting; }, 250);
 }
 
-// ★指定したXY座標にあるタイルをチェックして引き抜く補助関数
 function checkAndPullAt(x, y) {
   const el = document.elementFromPoint(x, y);
   const tileEl = el && el.closest(".tile");
@@ -338,14 +329,15 @@ function onTileDown(e, id) {
   unlockAudio();
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
-  if (tile.cleared && tile.type !== "veggie") return;
+  
   if (isProtected(tile)) { triggerShake(id); return; }
   if (tile.type === "rare") { startHold(id); return; }
+  
+  dragging = true; 
+  lastX = e.clientX;
+  lastY = e.clientY;
+  
   if (canDragPull(tile)) { 
-    dragging = true; 
-    // ★押し始めた瞬間の座標を記録
-    lastX = e.clientX || (e.touches && e.touches[0].clientX);
-    lastY = e.clientY || (e.touches && e.touches[0].clientY);
     pullWeed(id); 
   }
 }
@@ -355,13 +347,11 @@ function onPointerMoveGlobal(e) {
   const currentX = e.clientX;
   const currentY = e.clientY;
 
-  // ★前回記録した位置（lastX, lastY）がある場合、その間を細かく補間して草を抜く
   if (lastX !== null && lastY !== null) {
     const dx = currentX - lastX;
     const dy = currentY - lastY;
     const distance = Math.sqrt(dx * dx + dy * dy);
     
-    // 15ピクセルごとに細かく点を打って引き抜き判定を行う
     const steps = Math.ceil(distance / 15);
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
@@ -373,7 +363,6 @@ function onPointerMoveGlobal(e) {
     checkAndPullAt(currentX, currentY);
   }
 
-  // 今回の位置を記録して次に備える
   lastX = currentX;
   lastY = currentY;
 }
@@ -381,12 +370,10 @@ function onPointerMoveGlobal(e) {
 function onPointerUpGlobal() { 
   dragging = false; 
   cancelHold(); 
-  // ★指を離したら座標をリセット
   lastX = null; 
   lastY = null; 
 }
 
-// ---- FINISH! ----
 function showFinish() {
   if (document.getElementById("finish-overlay")) return;
   const overlay = document.createElement("div");
@@ -404,7 +391,6 @@ function showFinish() {
   });
 }
 
-// ---- 画面サイズ ----
 function setAppHeight() {
   const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   document.getElementById("app").style.height = h + "px";
@@ -433,7 +419,6 @@ window.addEventListener("resize", fitGridToScreen);
 window.addEventListener("orientationchange", fitGridToScreen);
 if (window.visualViewport) window.visualViewport.addEventListener("resize", fitGridToScreen);
 
-// ---- 図鑑 ----
 function renderZukan() {
   const foundCount = RARE_WEEDS.filter((w) => (totalPulls[w.name] || 0) > 0).length;
   document.getElementById("zukanCount").textContent = `${foundCount}/${RARE_WEEDS.length}`;
@@ -455,7 +440,6 @@ function renderZukan() {
   list.appendChild(zukanGrid);
 }
 
-// ---- リセット ----
 function resetField() {
   tiles = buildField();
   cancelHold();
@@ -465,14 +449,8 @@ function resetField() {
   renderZukan();
 }
 
-// ---- イベント ----
-document.addEventListener("pointermove", onPointerMoveGlobal);
-document.addEventListener("touchmove", (e) => {
-  if (!dragging || !e.touches[0]) return;
-  const t = e.touches[0];
-  // ★途中でreturnさせず、すべての移動座標をそのまま補間処理に送るように修正
-  onPointerMoveGlobal({ clientX: t.clientX, clientY: t.clientY });
-}, { passive: true });
+// ★競合していたtouchmoveイベントを完全削除し、最先端のpointerイベントのみに統一
+document.addEventListener("pointermove",   onPointerMoveGlobal);
 document.addEventListener("pointerup",     onPointerUpGlobal);
 document.addEventListener("pointercancel", onPointerUpGlobal);
 document.addEventListener("contextmenu",   (e) => e.preventDefault());
