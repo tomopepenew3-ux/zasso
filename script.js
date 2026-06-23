@@ -30,7 +30,6 @@ let tiles = [];
 let totalPulls = {};
 let dragging = false;
 let holdState = null;
-let veggieFoundCount = 0;
 
 let lastX = null;
 let lastY = null;
@@ -56,22 +55,31 @@ function initAudioSystem() {
     console.error("Web Audio API非対応環境です", e);
   }
 }
-initAudioSystem();
 
+// iOS Safariなどの自動再生制限を安全に解除する関数
 function forceUnlockAudio() {
+  initAudioSystem();
   if (!audioCtx) return;
-  if (audioCtx.state === "suspended") { audioCtx.resume(); }
-  try {
-    const dummySource = audioCtx.createBufferSource();
-    dummySource.buffer = audioCtx.createBuffer(1, 1, 22050);
-    dummySource.connect(audioCtx.destination);
-    dummySource.start(0);
-  } catch (e) {}
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
 }
+
+// 画面全体の通常タップで音声をアンロック（iOS対策）
+document.addEventListener("click", forceUnlockAudio);
+document.addEventListener("touchend", forceUnlockAudio);
 
 function playPon() {
   if (isMuted) return; 
-  if (!audioCtx || !ponBuffer) return; 
+  if (!audioCtx) initAudioSystem();
+  if (!audioCtx) return;
+  
+  // 再生直前にもサスペンド状態なら解除を試みる
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  
+  if (!ponBuffer) return; 
   try {
     const source = audioCtx.createBufferSource();
     source.buffer = ponBuffer;
@@ -106,9 +114,15 @@ function buildField() {
   const VEG_H = COUNTS.veggie / VEG_W;
   const anchorRow = Math.floor(Math.random() * (ROWS - VEG_H + 1));
   const anchorCol = Math.floor(Math.random() * (COLS - VEG_W + 1));
-  for (let r = 0; r < VEG_H; r++)
-    for (let c = 0; c < COLS; c++)
-      if (anchorRow + r < ROWS && anchorCol + c < COLS) grid2d[anchorRow + r][anchorCol + c] = "veggie";
+  
+  // 【バグ修正】横一列すべて野菜になっていたループ条件を VEG_W に修正！
+  for (let r = 0; r < VEG_H; r++) {
+    for (let c = 0; c < VEG_W; c++) {
+      if (anchorRow + r < ROWS && anchorCol + c < COLS) {
+        grid2d[anchorRow + r][anchorCol + c] = "veggie";
+      }
+    }
+  }
 
   const pool = [];
   for (let i = 0; i < COUNTS.weed;   i++) pool.push("weed");
@@ -138,6 +152,13 @@ function buildField() {
 }
 
 function renderField() {
+  // 【安全弁】HTMLの更新が遅れていても、JS側からタイトルを強制的に書き換える
+  document.title = "雑草すっぽん！";
+  const mainTitleEl = document.querySelector(".main-title");
+  if (mainTitleEl) {
+    mainTitleEl.textContent = "雑草すっぽん！";
+  }
+
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
   tiles.forEach((tile) => {
@@ -266,9 +287,15 @@ function pullWeed(id) {
     tile.weedCover = false;
     playPon();
     addFloatEffect(id, "発掘！");
-    veggieFoundCount++;
-    if (veggieFoundCount === 1) { showVeggieMessage(id, "あれ？野菜だ！"); } 
-    else if (veggieFoundCount >= COUNTS.veggie) { showVeggieMessage(id, "💡 家庭農園だったのか！"); }
+    
+    // 【バグ修正】実際に画面上でめくられた野菜の総数を正確にチェックするように変更
+    const allVeggieRevealed = tiles.filter(t => t.type === "veggie" && !t.weedCover).length;
+    if (allVeggieRevealed === 1) { 
+      showVeggieMessage(id, "あれ？野菜だ！"); 
+    } else if (allVeggieRevealed === COUNTS.veggie) { 
+      // 全部の野菜（6個）をしっかり見つけてからセリフが出る
+      showVeggieMessage(id, "💡 家庭菜園だったのか！"); 
+    }
   }
   updateTileVisual(id);
   updateCounters();
@@ -359,8 +386,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); 
-  
+  // pointerdown内でのアンロックはiOSに弾かれることがあるため、ここでは再生のみ行う
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
   
@@ -479,7 +505,6 @@ function resetField() {
   tiles = buildField();
   cancelHold();
   dragging = false;
-  veggieFoundCount = 0;
   renderField();
   renderZukan();
 }
@@ -488,9 +513,10 @@ function resetField() {
 const muteBtn = document.getElementById("muteBtn");
 if (muteBtn) {
   muteBtn.addEventListener("click", () => {
+    forceUnlockAudio(); // ボタンタップ時にも強烈に音声制限を解除する
     isMuted = !isMuted;
     muteBtn.textContent = isMuted ? "🔇 消音" : "🔊 音あり";
-    muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; // 消音時はボタンを少し半透明にする
+    muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
   });
 }
 
