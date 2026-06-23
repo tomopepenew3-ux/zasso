@@ -149,7 +149,7 @@ function buildField() {
 
 function forceRenameTitle() {
   document.title = "雑草すっぽん！";
-  const mainTitleEl = document.querySelector(".main-title");
+  const mainTitleEl = document.querySelector(".header-title");
   if (mainTitleEl) mainTitleEl.textContent = "雑草すっぽん！";
 }
 
@@ -247,30 +247,39 @@ function addFloatEffect(id, text) {
   span.className = "float-effect";
   span.textContent = text;
   span.style.left = (rect.left + rect.width / 2) + "px";
-  span.style.top  = (rect.top - 4) + "px";
+  span.style.top = (rect.top + rect.height / 2) + "px";
   document.body.appendChild(span);
   setTimeout(() => span.remove(), 750);
 }
 
-function showGauge(rareEmoji) {
-  document.getElementById("progressLabel").textContent = rareEmoji + " ただいま採取中...";
-  document.getElementById("pctText").textContent = "";
-  const fill = document.getElementById("progressFill");
-  fill.style.background  = "linear-gradient(90deg, gold, orange)";
-  fill.style.transition  = "none";
-  fill.style.width       = "0%";
-  document.getElementById("progressHint").textContent = "指を離すとキャンセル";
+// 時雨さんのCSS専用長押しエフェクト制御
+function showGauge(id, rareEmoji) {
+  const overlay = document.getElementById("gauge-overlay");
+  const el = getTileEl(id);
+  if (!overlay || !el) return;
+
+  const rect = el.getBoundingClientRect();
+  overlay.style.left = rect.left + "px";
+  overlay.style.top = rect.top + "px";
+  overlay.style.width = rect.width + "px";
+  overlay.style.height = rect.height + "px";
+  overlay.style.display = "flex";
+
+  const emojiEl = document.getElementById("gaugeEmoji");
+  if (emojiEl) emojiEl.textContent = rareEmoji;
+
+  const path = document.getElementById("gaugePath");
+  if (path) path.style.strokeDasharray = "0, 100";
 }
 
-function updateGauge(pct) { document.getElementById("progressFill").style.width = pct + "%"; }
+function updateGauge(pct) {
+  const path = document.getElementById("gaugePath");
+  if (path) path.style.strokeDasharray = `${pct}, 100`;
+}
 
 function hideGauge(complete) {
-  const fill = document.getElementById("progressFill");
-  fill.style.background = "";
-  fill.style.transition = "";
-  document.getElementById("progressLabel").textContent = "エリア達成率（はじまりの庭）";
-  document.getElementById("progressHint").textContent  = "✨光ってる草は長押しで抜こう／お花と木と家庭菜園は抜いちゃダメ";
-  updateCounters();
+  const overlay = document.getElementById("gauge-overlay");
+  if (overlay) overlay.style.display = "none";
 }
 
 function pullWeed(id) {
@@ -322,8 +331,7 @@ function cancelHold() {
 function startHold(id) {
   if (holdState) cancelHold();
   const tile = tiles.find((t) => t.id === id);
-  showGauge(tile ? tile.emoji : "🌟");
-  addFloatEffect(id, "Push!");
+  showGauge(id, tile ? tile.emoji : "🌟");
   const startTime = Date.now();
   const interval = setInterval(() => {
     const p = Math.min(100, ((Date.now() - startTime) / HOLD_DURATION) * 100);
