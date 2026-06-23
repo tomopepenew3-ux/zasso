@@ -1,3 +1,6 @@
+// ---- タイトル設定 ----
+document.title = "雑草すっぽん！";
+
 // ---- 定数 ----
 const WEED_EMOJI = ["🌱", "🍀", "🌿"];
 const FLOWER_EMOJI = ["🌷", "🌼", "🌸"];
@@ -30,33 +33,55 @@ let tiles = [];
 let totalPulls = {};
 let dragging = false;
 let holdState = null;
-let audioUnlocked = false;
 let veggieFoundCount = 0;
 
 let lastX = null;
 let lastY = null;
-let tileAreas = []; // ★全マスの正確な画面座標を記憶するカンペ用配列
+let tileAreas = [];
 
-const PON_POOL = Array.from({ length: 8 }, () => {
-  const a = new Audio("pon.mp3");
-  a.preload = "auto";
-  return a;
-});
+// ★音ゲー用・超低遅延オーディオシステムへの変更
+let audioCtx = null;
+let ponBuffer = null;
 
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+function initAudioSystem() {
+  if (audioCtx) return;
+  try {
+    const ContextClass = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new ContextClass();
+    
+    // バックグラウンドで音源ファイルをメモリに直ロード
+    fetch("pon.mp3")
+      .then(res => res.arrayBuffer())
+      .then(data => audioCtx.decodeAudioData(data))
+      .then(buffer => {
+        ponBuffer = buffer;
+      })
+      .catch(err => console.error("音源ファイルの読み込みに失敗しました（パスやサーバーを確認してください）:", err));
+  } catch (e) {
+    console.error("Web Audio API に対応していないブラウザです", e);
+  }
+}
+// 起動時にロードを開始しておく
+initAudioSystem();
 
 function unlockAudio() {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-  PON_POOL[0].play().then(() => { PON_POOL[0].pause(); PON_POOL[0].currentTime = 0; }).catch(() => {});
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
 }
 
 function playPon() {
   unlockAudio();
-  const s = PON_POOL.find(a => a.paused || a.ended) || PON_POOL[0];
-  s.currentTime = 0;
-  s.play().catch(() => {});
+  if (!audioCtx || !ponBuffer) return; // まだロードが終わっていない場合は無視
+  
+  // ゼロミリ秒で音を鳴らすための最速ノード作成
+  const source = audioCtx.createBufferSource();
+  source.buffer = ponBuffer;
+  source.connect(audioCtx.destination);
+  source.start(0);
 }
+
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function isWeedCover(tile)      { return tile.type === "veggie" && tile.weedCover; }
 function isRevealedVeggie(tile) { return tile.type === "veggie" && !tile.weedCover; }
@@ -243,7 +268,7 @@ function pullWeed(id) {
   if (tile.type === "weed") {
     tile.cleared = true;
     playPon();
-    addFloatEffect(id, "ポンッ！");
+    addFloatEffect(id, "すぽんっ！"); // エフェクトテキストも可愛く変更！
   } else if (isWeedCover(tile)) {
     tile.weedCover = false;
     playPon();
@@ -266,7 +291,7 @@ function pullRare(id) {
   playPon();
   if (tile.rareInfo) {
     totalPulls[tile.rareInfo.name] = (totalPulls[tile.rareInfo.name] || 0) + 1;
-    addFloatEffect(id, "スポンッ！");
+    addFloatEffect(id, "大すぽんっ！");
     renderZukan();
   }
   updateTileVisual(id);
@@ -314,7 +339,6 @@ function triggerResist(id) {
   setTimeout(() => { el.classList.remove("resist"); delete el.dataset.resisting; }, 250);
 }
 
-// ★画期的変更：カンペ配列（tileAreas）から指の下にあるマスを100%確実に特定する（ズレ絶対ゼロ）
 function checkAndPullAt(x, y) {
   const found = tileAreas.find(a => x >= a.left && x <= a.right && y >= a.top && y <= a.bottom);
   if (!found) return;
@@ -327,7 +351,6 @@ function checkAndPullAt(x, y) {
   if (canDragPull(tile))   pullWeed(id);
 }
 
-// ★画面上の全マスの「絶対的な位置」をカンペ（配列）に一発保存する超重要関数
 function cacheTileAreas() {
   tileAreas = [];
   tiles.forEach((tile) => {
@@ -346,6 +369,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
+  initAudioSystem(); // 最初のタッチで安全にオーディオ起動
   unlockAudio();
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -354,7 +378,7 @@ function onTileDown(e, id) {
   if (tile.type === "rare") { startHold(id); return; }
   
   dragging = true; 
-  lastX = e.pageX; // 絶対座標系に変更してスクロール誤差も完全カット
+  lastX = e.pageX;
   lastY = e.pageY;
   
   if (canDragPull(tile)) { 
@@ -435,7 +459,6 @@ function fitGridToScreen() {
   grid.style.width               = (COLS * size + (COLS - 1) * gap) + "px";
   grid.style.height              = (ROWS * size + (ROWS - 1) * gap) + "px";
 
-  // ★描画が確定した直後にカンペ（座標情報）を最新に更新する
   setTimeout(cacheTileAreas, 0);
 }
 
@@ -464,6 +487,12 @@ function renderZukan() {
   list.appendChild(zukanGrid);
 }
 
+function applyAppTitle() {
+  // 画面上にある見出し(h1)を自動で『雑草すっぽん！』に書き換える
+  const titleEl = document.querySelector("h1") || document.querySelector(".title");
+  if (titleEl) titleEl.textContent = "雑草すっぽん！";
+}
+
 function resetField() {
   tiles = buildField();
   cancelHold();
@@ -471,6 +500,7 @@ function resetField() {
   veggieFoundCount = 0;
   renderField();
   renderZukan();
+  applyAppTitle();
 }
 
 document.addEventListener("pointermove",   onPointerMoveGlobal);
