@@ -9,11 +9,9 @@
 <body>
     <div id="app">
         <!-- ヘッダーエリア -->
-        <header>
-            <div class="header-top">
-                <h1 class="main-title">雑草すっぽん！</h1>
-                <button id="zukanOpenBtn">📖 図鑑 <span id="zukanCount">0/9</span></button>
-            </div>
+        <div id="header">
+            <h1 class="main-title">雑草すっぽん！</h1>
+            <button id="zukanOpenBtn">📖 図鑑 <span id="zukanCount">0/9</span></button>
             
             <!-- エリア達成率ゲージ -->
             <div class="progress-container">
@@ -26,7 +24,7 @@
                 </div>
                 <div id="progressHint">✨ 光ってる草は長押しで抜こう／お花と木と家庭菜園は抜いちゃダメ</div>
             </div>
-        </header>
+        </div>
 
         <!-- メインの庭（草むしり画面） -->
         <main id="field">
@@ -34,15 +32,13 @@
         </main>
 
         <!-- フッターエリア -->
-        <footer>
+        <div id="footer">
             <div class="counter">
                 🌱 抜いた草 <span id="clearedCount">0</span> / <span id="totalClearable">156</span>
             </div>
-            <div class="footer-buttons">
-                <button id="muteBtn">🔊 音あり</button>
-                <button id="resetBtn">🔄 庭をリセット</button>
-            </div>
-        </footer>
+            <button id="muteBtn">🔊 音あり</button>
+            <button id="resetBtn">🔄 庭をリセット</button>
+        </div>
     </div>
 
     <!-- 図鑑ポップアップ（モーダル） -->
@@ -56,7 +52,6 @@
         </div>
     </div>
 
-    <!-- 末尾に「?v=3」を付けて、スマホの古いキャッシュを強制的に消し飛ばすおまじない -->
     <script src="script.js?v=3"></script>
 </body>
 </html>
