@@ -1,6 +1,3 @@
-// ---- タイトル設定 ----
-document.title = "雑草すっぽん！";
-
 // ---- 定数 ----
 const WEED_EMOJI = ["🌱", "🍀", "🌿"];
 const FLOWER_EMOJI = ["🌷", "🌼", "🌸"];
@@ -33,78 +30,58 @@ let tiles = [];
 let totalPulls = {};
 let dragging = false;
 let holdState = null;
-let veggieFoundCount = 0;
 
 let lastX = null;
 let lastY = null;
 let tileAreas = [];
 
+// 【安全弁】メッセージの重複を物理的に絶対させないためのガードフラグ
+let hasShownVeggieCompleteMsg = false;
+
 // ---- 音響・ミュートシステム ----
 let audioCtx = null;
 let ponBuffer = null;
-let isMuted = false; // アプリ内のミュート状態管理
+let isMuted = false;
 
+// 起動時にあらかじめオーディオを準備しておく
 function initAudioSystem() {
   if (audioCtx) return;
   try {
     const ContextClass = window.AudioContext || window.webkitAudioContext;
     audioCtx = new ContextClass();
     
-    // あらかじめ「pon.mp3」をメモリに超高速デコードして格納
     fetch("pon.mp3")
       .then(res => res.arrayBuffer())
       .then(data => audioCtx.decodeAudioData(data))
-      .then(buffer => {
-        ponBuffer = buffer;
-      })
+      .then(buffer => { ponBuffer = buffer; })
       .catch(err => console.error("音源ファイルの読み込みに失敗しました:", err));
   } catch (e) {
     console.error("Web Audio API非対応環境です", e);
   }
 }
-initAudioSystem();
 
-// 画面に「音あり/消音」ボタンを自動でねじ込む関数
-function setupMuteButton() {
-  if (document.getElementById("muteBtn")) return; // すでにボタンがあればスキップ
-  const resetBtn = document.getElementById("resetBtn");
-  if (!resetBtn) return;
-  
-  const muteBtn = document.createElement("button");
-  muteBtn.id = "muteBtn";
-  muteBtn.className = resetBtn.className; // 元のリセットボタンと同じ綺麗なデザインをコピー
-  muteBtn.textContent = "🔊 音あり";
-  muteBtn.style.marginRight = "8px"; // ボタンの間に少し隙間をあける
-  
-  muteBtn.addEventListener("click", () => {
-    isMuted = !isMuted;
-    muteBtn.textContent = isMuted ? "🔇 消音" : "🔊 音あり";
-    // 消音中はちょっとボタンを薄くして分かりやすくする
-    muteBtn.style.opacity = isMuted ? "0.6" : "1.0";
-  });
-  
-  // リセットボタンの直前に挿入
-  resetBtn.parentNode.insertBefore(muteBtn, resetBtn);
+// ユーザーが画面を触った瞬間に音のロックを解除する
+function forceUnlockAudio() {
+  initAudioSystem();
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
 }
 
-// 指が触れた瞬間にブラウザの音響制限を解除する関数
-function forceUnlockAudio() {
+// 各種イベントに安全弁として登録
+document.addEventListener("click", forceUnlockAudio);
+document.addEventListener("touchend", forceUnlockAudio);
+
+function playPon() {
+  if (isMuted) return; 
+  if (!audioCtx) initAudioSystem();
   if (!audioCtx) return;
+  
   if (audioCtx.state === "suspended") {
     audioCtx.resume();
   }
-  try {
-    const dummySource = audioCtx.createBufferSource();
-    dummySource.buffer = audioCtx.createBuffer(1, 1, 22050);
-    dummySource.connect(audioCtx.destination);
-    dummySource.start(0);
-  } catch (e) {}
-}
-
-function playPon() {
-  if (isMuted) return; // ★画面で「消音」にしている時は絶対に音を出さない！
-  if (!audioCtx || !ponBuffer) return; 
   
+  if (!ponBuffer) return; 
   try {
     const source = audioCtx.createBufferSource();
     source.buffer = ponBuffer;
@@ -139,9 +116,14 @@ function buildField() {
   const VEG_H = COUNTS.veggie / VEG_W;
   const anchorRow = Math.floor(Math.random() * (ROWS - VEG_H + 1));
   const anchorCol = Math.floor(Math.random() * (COLS - VEG_W + 1));
-  for (let r = 0; r < VEG_H; r++)
-    for (let c = 0; c < COLS; c++)
-      if (anchorRow + r < ROWS && anchorCol + c < COLS) grid2d[anchorRow + r][anchorCol + c] = "veggie";
+  
+  for (let r = 0; r < VEG_H; r++) {
+    for (let c = 0; c < VEG_W; c++) {
+      if (anchorRow + r < ROWS && anchorCol + c < COLS) {
+        grid2d[anchorRow + r][anchorCol + c] = "veggie";
+      }
+    }
+  }
 
   const pool = [];
   for (let i = 0; i < COUNTS.weed;   i++) pool.push("weed");
@@ -170,7 +152,24 @@ function buildField() {
   });
 }
 
+// 【超強力安全弁】HTMLの更新が遅れていても、画面上の「雑草ハンター」という文字を力技で全置換する関数
+function forceRenameTitle() {
+  document.title = "雑草すっぽん！";
+  const mainTitleEl = document.querySelector(".main-title");
+  if (mainTitleEl) mainTitleEl.textContent = "雑草すっぽん！";
+  
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+  let node;
+  while (node = walker.nextNode()) {
+    if (node.nodeValue.includes("雑草ハンター")) {
+      node.nodeValue = node.nodeValue.replace(/雑草ハンター（仮）/g, "雑草すっぽん！").replace(/雑草ハンター/g, "雑草すっぽん！");
+    }
+  }
+}
+
 function renderField() {
+  forceRenameTitle(); 
+
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
   tiles.forEach((tile) => {
@@ -193,12 +192,9 @@ function renderField() {
   document.getElementById("totalClearable").textContent = TOTAL_CLEARABLE;
   updateCounters();
   fitGridToScreen();
-  setupMuteButton(); // フィールド生成時にミュートボタンを設置
 }
 
-function getTileEl(id) {
-  return document.querySelector(`.tile[data-tile-id="${id}"]`);
-}
+function getTileEl(id) { return document.querySelector(`.tile[data-tile-id="${id}"]`); }
 
 function updateTileVisual(id) {
   const tile = tiles.find((t) => t.id === id);
@@ -270,10 +266,7 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-const gaugeOverlay = document.getElementById("gauge-overlay");
-
 function showGauge(rareEmoji) {
-  gaugeOverlay.style.display = "none";
   document.getElementById("progressLabel").textContent = rareEmoji + " ただいま採取中...";
   document.getElementById("pctText").textContent = "";
   const fill = document.getElementById("progressFill");
@@ -283,12 +276,9 @@ function showGauge(rareEmoji) {
   document.getElementById("progressHint").textContent = "指を離すとキャンセル";
 }
 
-function updateGauge(pct) {
-  document.getElementById("progressFill").style.width = pct + "%";
-}
+function updateGauge(pct) { document.getElementById("progressFill").style.width = pct + "%"; }
 
 function hideGauge(complete) {
-  gaugeOverlay.style.display = "none";
   const fill = document.getElementById("progressFill");
   fill.style.background = "";
   fill.style.transition = "";
@@ -308,11 +298,13 @@ function pullWeed(id) {
     tile.weedCover = false;
     playPon();
     addFloatEffect(id, "発掘！");
-    veggieFoundCount++;
-    if (veggieFoundCount === 1) {
-      showVeggieMessage(id, "あれ？野菜だ！");
-    } else if (veggieFoundCount >= COUNTS.veggie) {
-      showVeggieMessage(id, "💡 家庭農園だったのか！");
+    
+    const allVeggieRevealed = tiles.filter(t => t.type === "veggie" && !t.weedCover).length;
+    if (allVeggieRevealed === 1) { 
+      showVeggieMessage(id, "あれ？野菜だ！"); 
+    } else if (allVeggieRevealed === COUNTS.veggie && !hasShownVeggieCompleteMsg) { 
+      hasShownVeggieCompleteMsg = true;
+      showVeggieMessage(id, "💡 家庭菜園だったのか！"); 
     }
   }
   updateTileVisual(id);
@@ -404,19 +396,22 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); 
+  
+  // 【超重要】ユーザーが触ったまさにその瞬間に、ブラウザの音声ロックを即時強制解除する
+  forceUnlockAudio();
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
   
-  if (isProtected(tile)) { triggerShake(id); return; }
   if (tile.type === "rare") { startHold(id); return; }
   
   dragging = true; 
   lastX = e.pageX;
   lastY = e.pageY;
   
-  if (canDragPull(tile)) { 
+  if (isProtected(tile)) { 
+    triggerShake(id); 
+  } else if (canDragPull(tile)) { 
     pullWeed(id); 
   }
 }
@@ -522,19 +517,23 @@ function renderZukan() {
   list.appendChild(zukanGrid);
 }
 
-function applyAppTitle() {
-  const titleEl = document.querySelector("h1") || document.querySelector(".title");
-  if (titleEl) titleEl.textContent = "雑草すっぽん！";
-}
-
 function resetField() {
   tiles = buildField();
   cancelHold();
   dragging = false;
-  veggieFoundCount = 0;
+  hasShownVeggieCompleteMsg = false; 
   renderField();
   renderZukan();
-  applyAppTitle();
+}
+
+const muteBtn = document.getElementById("muteBtn");
+if (muteBtn) {
+  muteBtn.addEventListener("click", () => {
+    forceUnlockAudio(); 
+    isMuted = !isMuted;
+    muteBtn.textContent = isMuted ? "🔇 消音" : "🔊 音あり";
+    muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
+  });
 }
 
 document.addEventListener("pointermove",   onPointerMoveGlobal);
@@ -553,4 +552,6 @@ document.getElementById("modalOverlay").addEventListener("click", (e) => {
 });
 document.getElementById("resetBtn").addEventListener("click", resetField);
 
+// 起動時に即座にオーディオをセットアップ
+initAudioSystem();
 resetField();
