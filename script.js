@@ -34,8 +34,6 @@ let holdState = null;
 let lastX = null;
 let lastY = null;
 let tileAreas = [];
-
-// 【安全弁】メッセージの重複を物理的に絶対させないためのガードフラグ
 let hasShownVeggieCompleteMsg = false;
 
 // ---- 音響・ミュートシステム ----
@@ -43,7 +41,6 @@ let audioCtx = null;
 let ponBuffer = null;
 let isMuted = false;
 
-// 起動時にあらかじめオーディオを準備しておく
 function initAudioSystem() {
   if (audioCtx) return;
   try {
@@ -60,7 +57,6 @@ function initAudioSystem() {
   }
 }
 
-// ユーザーが画面を触った瞬間に音のロックを解除する
 function forceUnlockAudio() {
   initAudioSystem();
   if (audioCtx && audioCtx.state === "suspended") {
@@ -68,7 +64,6 @@ function forceUnlockAudio() {
   }
 }
 
-// 各種イベントに安全弁として登録
 document.addEventListener("click", forceUnlockAudio);
 document.addEventListener("touchend", forceUnlockAudio);
 
@@ -152,19 +147,10 @@ function buildField() {
   });
 }
 
-// 【超強力安全弁】HTMLの更新が遅れていても、画面上の「雑草ハンター」という文字を力技で全置換する関数
 function forceRenameTitle() {
   document.title = "雑草すっぽん！";
   const mainTitleEl = document.querySelector(".main-title");
   if (mainTitleEl) mainTitleEl.textContent = "雑草すっぽん！";
-  
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-  let node;
-  while (node = walker.nextNode()) {
-    if (node.nodeValue.includes("雑草ハンター")) {
-      node.nodeValue = node.nodeValue.replace(/雑草ハンター（仮）/g, "雑草すっぽん！").replace(/雑草ハンター/g, "雑草すっぽん！");
-    }
-  }
 }
 
 function renderField() {
@@ -396,8 +382,6 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  
-  // 【超重要】ユーザーが触ったまさにその瞬間に、ブラウザの音声ロックを即時強制解除する
   forceUnlockAudio();
   
   const tile = tiles.find((t) => t.id === id);
@@ -552,6 +536,5 @@ document.getElementById("modalOverlay").addEventListener("click", (e) => {
 });
 document.getElementById("resetBtn").addEventListener("click", resetField);
 
-// 起動時に即座にオーディオをセットアップ
 initAudioSystem();
 resetField();
