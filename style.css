@@ -1,548 +1,239 @@
-// ---- 定数 ----
-const WEED_EMOJI = ["🌱", "🍀", "🌿"];
-const FLOWER_EMOJI = ["🌷", "🌼", "🌸"];
-const VEGGIE_EMOJI = ["🍆", "🥕"];
-const TREE_EMOJI = ["🌳", "🌲"];
+:root {
+  --cream: #f5efe0;
+  --forest: #2f4a33;
+  --soil-light: #8a6a45;
+  --soil-dark: #6b4a2e;
+  --tile-bg: #3f5d3a;
+  --field-from: #5b7a45;
+  --field-to: #4a6b3a;
+  --progress-track: #2a3d27;
+  --progress-fill: #9ac26b;
+  --rare-glow: rgba(255, 221, 120, 0.85);
+  --locked-bg: #e8e1cf;
+  --locked-border: #cfc6ac;
+  --locked-text: #a89c7e;
+}
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--tile-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+[hidden] { display: none !important; }
 
-const RARE_ICONS = ["🌟","💖","🌟","💖","🌟","💖","🌟","💖","🌟"];
-const RARE_WEEDS = [
-  { name: "顔がついている草",       desc: "たまにこちらを見てくるが、別に害はない。",         icon: RARE_ICONS[0] },
-  { name: "やたら筋肉質な草",       desc: "触るとムキムキしていて、なんか頼りになりそう。",   icon: RARE_ICONS[1] },
-  { name: "なんかめっちゃ光ってる草", desc: "夜になると光を放つ、とても目立つ草。",           icon: RARE_ICONS[2] },
-  { name: "なんか耳っぽい草",       desc: "風の音などを集めているように揺れている。",         icon: RARE_ICONS[3] },
-  { name: "ウワァー！ってなる草",   desc: "引き抜くと悲鳴のような変な音が鳴る。",             icon: RARE_ICONS[4] },
-  { name: "イヤァー！ってなる草",   desc: "近づくとしおれて、なんだかこちらまで悲しくなる。", icon: RARE_ICONS[5] },
-  { name: "夜中に踊るらしい草",     desc: "真夜中になるとふわふわ揺れて踊り出す。",           icon: RARE_ICONS[6] },
-  { name: "エコな説明をする草",     desc: "近づくと図や記号でいろんな説明をしてくれる。",     icon: RARE_ICONS[7] },
-  { name: "うるさい草",             desc: "いろんなことをずっとしゃべり続けている。",         icon: RARE_ICONS[8] },
-];
-
-const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
-const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
-const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
-const HOLD_DURATION = 1100;
-const TILE_GAP = 4;
-
-let COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
-let ROWS = TOTAL_CELLS / COLS;
-
-let tiles = [];
-let totalPulls = {};
-let dragging = false;
-let holdState = null;
-
-let lastX = null;
-let lastY = null;
-let tileAreas = [];
-let hasShownVeggieCompleteMsg = false;
-
-// ---- 音響・ミュートシステム ----
-let audioCtx = null;
-let ponBuffer = null;
-let isMuted = false;
-
-function initAudioSystem() {
-  if (audioCtx) return;
-  try {
-    const ContextClass = window.AudioContext || window.webkitAudioContext;
-    audioCtx = new ContextClass();
-    
-    fetch("pon.mp3")
-      .then(res => res.arrayBuffer())
-      .then(data => audioCtx.decodeAudioData(data))
-      .then(buffer => { ponBuffer = buffer; })
-      .catch(err => console.error("音源ファイルの読み込みに失敗しました:", err));
-  } catch (e) {
-    console.error("Web Audio API非対応環境です", e);
-  }
+#app {
+  width: 100%; height: 100vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.header {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 16px;
+  background: var(--cream); border-bottom: 4px solid var(--forest);
+}
+.header-left { display: flex; align-items: center; gap: 8px; }
+.header-icon { font-size: 22px; }
+.header-title { color: var(--forest); font-weight: 700; font-size: 15px; line-height: 1.2; }
+.header-sub { color: var(--soil-dark); font-size: 11px; }
+.zukan-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--forest); color: var(--cream);
+  border: none; border-radius: 999px;
+  padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 
-function forceUnlockAudio() {
-  initAudioSystem();
-  if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
+.progress-wrap { flex-shrink: 0; padding: 10px 16px 0; }
+.progress-row {
+  display: flex; justify-content: space-between;
+  color: var(--cream); font-size: 12px; margin-bottom: 4px;
+}
+.progress-track {
+  width: 100%; height: 12px; border-radius: 999px;
+  background: var(--progress-track); overflow: hidden;
+}
+.progress-fill { height: 100%; background: var(--progress-fill); transition: width 0.25s ease; width: 0%; }
+.hint { color: var(--progress-fill); font-size: 11px; margin-top: 4px; }
+
+.field {
+  flex: 1; margin: 12px 16px; border-radius: 18px;
+  background: linear-gradient(135deg, var(--field-from), var(--field-to));
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.25);
+  overflow: hidden; position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+.grid { display: grid; gap: 4px; }
+
+.tile {
+  position: relative;
+  background: var(--tile-bg);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; touch-action: none;
+}
+.tile-emoji {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.tile.cleared        { background: var(--soil-light); }
+.tile.veggie-covered  { background: var(--tile-bg); }
+.tile.veggie-revealed { background: var(--soil-light); }
+.tile.rare-glow      { box-shadow: 0 0 10px 2px var(--rare-glow); }
+.tile.rare-glow .tile-emoji { filter: drop-shadow(0 0 4px gold); animation: pulse 1.4s ease-in-out infinite; }
+.tile.shake  { animation: tile-shake 0.3s ease-in-out; }
+.tile.resist { animation: resist-flash 0.25s ease-in-out; }
+
+/* フロートテキスト */
+.float-effect {
+  position: fixed;
+  transform: translateX(-50%);
+  font-size: 12px; font-weight: 700; color: #fff7d6;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+  white-space: nowrap; pointer-events: none;
+  animation: float-up 0.75s ease-out forwards;
+  z-index: 100;
 }
 
-document.addEventListener("click", forceUnlockAudio);
-document.addEventListener("touchend", forceUnlockAudio);
-
-function playPon() {
-  if (isMuted) return; 
-  if (!audioCtx) initAudioSystem();
-  if (!audioCtx) return;
-  
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
-  
-  if (!ponBuffer) return; 
-  try {
-    const source = audioCtx.createBufferSource();
-    source.buffer = ponBuffer;
-    source.connect(audioCtx.destination);
-    source.start(0);
-  } catch (e) {
-    console.error("再生エラー:", e);
-  }
+/* 長押しゲージオーバーレイ */
+#gauge-overlay {
+  display: none; position: fixed;
+  align-items: center; justify-content: center; flex-direction: column;
+  z-index: 200; pointer-events: none;
+}
+#gauge-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.gauge-emoji {
+  position: relative; font-size: 2em; z-index: 1;
+  filter: drop-shadow(0 0 6px gold);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.gauge-push {
+  position: absolute; bottom: 8%; left: 50%; transform: translateX(-50%);
+  font-size: 11px; font-weight: 700; color: #fff7d6;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+  white-space: nowrap; z-index: 1;
 }
 
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-function isWeedCover(tile)      { return tile.type === "veggie" && tile.weedCover; }
-function isRevealedVeggie(tile) { return tile.type === "veggie" && !tile.weedCover; }
-function isProtected(tile)      { return tile.type === "flower" || tile.type === "tree" || isRevealedVeggie(tile); }
-function canDragPull(tile)      { return (tile.type === "weed" && !tile.cleared) || isWeedCover(tile); }
-function countsAsPulled(tile)   {
-  return (tile.type === "rare"  && tile.cleared)
-      || (tile.type === "weed"  && tile.cleared)
-      || isRevealedVeggie(tile);
+/* 農園発見メッセージ */
+.veggie-msg {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  font-size: 15px; font-weight: 700;
+  color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+  white-space: nowrap; pointer-events: none;
+  animation: veggie-fade 2.2s ease-out forwards;
+  z-index: 150;
 }
 
-function getGridSize() {
-  COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
-  ROWS = TOTAL_CELLS / COLS;
+/* 採取完了など庭の上に出るメッセージ */
+#field-msg {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 26px; font-weight: 900;
+  color: #fff7d6; text-shadow: 0 3px 12px rgba(0,0,0,0.6);
+  pointer-events: none; white-space: nowrap;
+  animation: field-msg-anim 2.5s ease-out forwards;
+  z-index: 20;
 }
 
-function buildField() {
-  getGridSize();
-  const grid2d = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-  const VEG_W = COLS >= ROWS ? 3 : 2;
-  const VEG_H = COUNTS.veggie / VEG_W;
-  const anchorRow = Math.floor(Math.random() * (ROWS - VEG_H + 1));
-  const anchorCol = Math.floor(Math.random() * (COLS - VEG_W + 1));
-  
-  for (let r = 0; r < VEG_H; r++) {
-    for (let c = 0; c < VEG_W; c++) {
-      if (anchorRow + r < ROWS && anchorCol + c < COLS) {
-        grid2d[anchorRow + r][anchorCol + c] = "veggie";
-      }
-    }
-  }
-
-  const pool = [];
-  for (let i = 0; i < COUNTS.weed;   i++) pool.push("weed");
-  for (let i = 0; i < COUNTS.rare;   i++) pool.push("rare");
-  for (let i = 0; i < COUNTS.flower; i++) pool.push("flower");
-  for (let i = 0; i < COUNTS.tree;   i++) pool.push("tree");
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-
-  let p = 0;
-  const flat = [];
-  for (let r = 0; r < ROWS; r++)
-    for (let c = 0; c < COLS; c++)
-      flat.push(grid2d[r][c] || pool[p++]);
-
-  return flat.map((type, idx) => {
-    let emoji = "", rareInfo = null, veggieEmoji = null, weedCover = false;
-    if (type === "weed")   emoji = pick(WEED_EMOJI);
-    if (type === "flower") emoji = pick(FLOWER_EMOJI);
-    if (type === "tree")   emoji = pick(TREE_EMOJI);
-    if (type === "veggie") { veggieEmoji = pick(VEGGIE_EMOJI); emoji = pick(WEED_EMOJI); weedCover = true; }
-    if (type === "rare")   { rareInfo = pick(RARE_WEEDS); emoji = Math.random() < 0.5 ? "🌟" : "💖"; }
-    return { id: idx, type, emoji, rareInfo, cleared: false, veggieEmoji, weedCover };
-  });
+.footer {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: var(--cream); border-top: 4px solid var(--forest);
+}
+.counter { color: var(--forest); font-weight: 700; font-size: 14px; }
+.reset-btn {
+  background: none; border: none; color: var(--soil-dark);
+  font-size: 12px; font-weight: 700; cursor: pointer;
 }
 
-function forceRenameTitle() {
-  document.title = "雑草すっぽん！";
-  const mainTitleEl = document.querySelector(".header-title");
-  if (mainTitleEl) mainTitleEl.textContent = "雑草すっぽん！";
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: none; align-items: center; justify-content: center;
+  padding: 16px; z-index: 50;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--cream); border-radius: 18px;
+  width: 100%; max-width: 460px; max-height: 80vh;
+  overflow-y: auto; padding: 16px;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.modal-header h2 { margin: 0; color: var(--forest); font-size: 18px; }
+.modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--forest); }
+.zukan-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.zukan-card {
+  padding: 10px; border-radius: 12px; text-align: center;
+  border: 1px solid var(--locked-border); background: var(--locked-bg);
+}
+.zukan-card.found { background: #ffffff; border-color: var(--progress-fill); }
+.zukan-card.locked .zukan-icon { filter: grayscale(1); opacity: 0.5; }
+.zukan-icon { font-size: 28px; display: block; margin-bottom: 4px; }
+.zukan-name { font-weight: 700; font-size: 12px; color: var(--locked-text); }
+.zukan-card.found .zukan-name { color: var(--forest); }
+.zukan-desc { font-size: 10px; color: var(--soil-dark); margin-top: 4px; line-height: 1.4; }
+.zukan-pulls { font-size: 10px; font-weight: 700; color: var(--forest); margin-top: 6px; }
+
+#finish-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,0.65);
+  display: flex; align-items: center; justify-content: center;
+  animation: overlay-in 0.4s ease;
+}
+.finish-box {
+  background: var(--cream); border-radius: 24px;
+  padding: 36px 32px; text-align: center;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+  animation: box-pop 0.45s cubic-bezier(0.34,1.56,0.64,1);
+}
+.finish-text { font-size: 40px; font-weight: 900; color: var(--forest); letter-spacing: 2px; margin-bottom: 8px; }
+.finish-sub  { color: var(--soil-dark); font-size: 15px; margin-bottom: 24px; }
+.finish-reset {
+  background: var(--forest); color: var(--cream);
+  border: none; border-radius: 999px;
+  padding: 12px 28px; font-size: 15px; font-weight: 700; cursor: pointer;
 }
 
-function renderField() {
-  forceRenameTitle(); 
-
-  const grid = document.getElementById("grid");
-  grid.innerHTML = "";
-  tiles.forEach((tile) => {
-    const div = document.createElement("div");
-    div.className = "tile";
-    div.dataset.tileId = tile.id;
-    div.style.touchAction = "none";
-    if (tile.type === "veggie") {
-      div.innerHTML = `
-        <span class="tile-emoji weed-cover">${tile.emoji}</span>
-        <span class="tile-emoji veggie-base" hidden>${tile.veggieEmoji}</span>`;
-    } else {
-      div.innerHTML = `<span class="tile-emoji">${tile.emoji}</span>`;
-    }
-    div.addEventListener("contextmenu",  (e) => e.preventDefault());
-    div.addEventListener("pointerdown",  (e) => onTileDown(e, tile.id));
-    grid.appendChild(div);
-    updateTileVisual(tile.id);
-  });
-  document.getElementById("totalClearable").textContent = TOTAL_CLEARABLE;
-  updateCounters();
-  fitGridToScreen();
+@keyframes float-up {
+  0%   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-28px); }
 }
-
-function getTileEl(id) { return document.querySelector(`.tile[data-tile-id="${id}"]`); }
-
-function updateTileVisual(id) {
-  const tile = tiles.find((t) => t.id === id);
-  const el = getTileEl(id);
-  if (!tile || !el) return;
-  el.style.touchAction = "none";
-  
-  const isSoil = tile.cleared && tile.type !== "veggie";
-  el.classList.toggle("cleared",         isSoil);
-  el.classList.toggle("veggie-revealed", isRevealedVeggie(tile));
-  el.classList.toggle("veggie-covered",  isWeedCover(tile));
-  el.classList.toggle("rare-glow",       tile.type === "rare" && !tile.cleared);
-  if (tile.type === "veggie") {
-    const cover = el.querySelector(".weed-cover");
-    const base  = el.querySelector(".veggie-base");
-    if (cover) cover.hidden = !tile.weedCover;
-    if (base)  base.hidden  =  tile.weedCover;
-    return;
-  }
-  const emojiSpan = el.querySelector(".tile-emoji");
-  if (!emojiSpan) return;
-  emojiSpan.hidden = isSoil;
-  if (!isSoil) emojiSpan.textContent = tile.emoji;
+@keyframes tile-shake {
+  0%, 100% { transform: translateX(0); }
+  25%       { transform: translateX(-3px); }
+  75%       { transform: translateX(3px); }
 }
-
-function updateCounters() {
-  const clearedCount = tiles.filter(countsAsPulled).length;
-  const pct = TOTAL_CLEARABLE ? Math.round((clearedCount / TOTAL_CLEARABLE) * 100) : 0;
-  document.getElementById("clearedCount").textContent = clearedCount;
-  document.getElementById("pctText").textContent = pct + "%";
-  document.getElementById("progressFill").style.width = pct + "%";
-  if (pct >= 100) showFinish();
+@keyframes resist-flash {
+  0%, 100% { filter: brightness(1); }
+  50%       { filter: brightness(1.6); }
 }
-
-function showVeggieMessage(tileId, text) {
-  const el = getTileEl(tileId);
-  if (!el) return;
-  const rect = el.getBoundingClientRect();
-  const span = document.createElement("span");
-  span.className = "veggie-msg";
-  span.textContent = text;
-  span.style.left = (rect.left + rect.width / 2) + "px";
-  span.style.top  = (rect.top  + rect.height / 2) + "px";
-  document.body.appendChild(span);
-  setTimeout(() => span.remove(), 2200);
+@keyframes pulse {
+  0%, 100% { opacity: 1; } 50% { opacity: 0.6; }
 }
-
-function showFieldMessage(text) {
-  const existing = document.getElementById("field-msg");
-  if (existing) existing.remove();
-  const field = document.getElementById("field");
-  const div = document.createElement("div");
-  div.id = "field-msg";
-  div.textContent = text;
-  field.appendChild(div);
-  setTimeout(() => div.remove(), 2500);
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes box-pop {
+  from { transform: scale(0.6); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
 }
-
-function addFloatEffect(id, text) {
-  const el = getTileEl(id);
-  if (!el) return;
-  const rect = el.getBoundingClientRect();
-  const span = document.createElement("span");
-  span.className = "float-effect";
-  span.textContent = text;
-  span.style.left = (rect.left + rect.width / 2) + "px";
-  span.style.top = (rect.top + rect.height / 2) + "px";
-  document.body.appendChild(span);
-  setTimeout(() => span.remove(), 750);
+@keyframes veggie-fade {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  20%  { opacity: 1; transform: translate(-50%, -60%) scale(1.05); }
+  70%  { opacity: 1; transform: translate(-50%, -70%); }
+  100% { opacity: 0; transform: translate(-50%, -80%); }
 }
-
-// 時雨さんのCSS専用長押しエフェクト制御
-function showGauge(id, rareEmoji) {
-  const overlay = document.getElementById("gauge-overlay");
-  const el = getTileEl(id);
-  if (!overlay || !el) return;
-
-  const rect = el.getBoundingClientRect();
-  overlay.style.left = rect.left + "px";
-  overlay.style.top = rect.top + "px";
-  overlay.style.width = rect.width + "px";
-  overlay.style.height = rect.height + "px";
-  overlay.style.display = "flex";
-
-  const emojiEl = document.getElementById("gaugeEmoji");
-  if (emojiEl) emojiEl.textContent = rareEmoji;
-
-  const path = document.getElementById("gaugePath");
-  if (path) path.style.strokeDasharray = "0, 100";
+@keyframes field-msg-anim {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  15%  { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  70%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
 }
-
-function updateGauge(pct) {
-  const path = document.getElementById("gaugePath");
-  if (path) path.style.strokeDasharray = `${pct}, 100`;
-}
-
-function hideGauge(complete) {
-  const overlay = document.getElementById("gauge-overlay");
-  if (overlay) overlay.style.display = "none";
-}
-
-function pullWeed(id) {
-  const tile = tiles.find((t) => t.id === id);
-  if (!tile || !canDragPull(tile)) return;
-  if (tile.type === "weed") {
-    tile.cleared = true;
-    playPon();
-    addFloatEffect(id, "すぽんっ！");
-  } else if (isWeedCover(tile)) {
-    tile.weedCover = false;
-    playPon();
-    addFloatEffect(id, "発掘！");
-    
-    const allVeggieRevealed = tiles.filter(t => t.type === "veggie" && !t.weedCover).length;
-    if (allVeggieRevealed === 1) { 
-      showVeggieMessage(id, "あれ？野菜だ！"); 
-    } else if (allVeggieRevealed === COUNTS.veggie && !hasShownVeggieCompleteMsg) { 
-      hasShownVeggieCompleteMsg = true;
-      showVeggieMessage(id, "💡 家庭菜園だったのか！"); 
-    }
-  }
-  updateTileVisual(id);
-  updateCounters();
-}
-
-function pullRare(id) {
-  const tile = tiles.find((t) => t.id === id);
-  if (!tile || tile.type !== "rare" || tile.cleared) return;
-  tile.cleared = true;
-  playPon();
-  if (tile.rareInfo) {
-    totalPulls[tile.rareInfo.name] = (totalPulls[tile.rareInfo.name] || 0) + 1;
-    addFloatEffect(id, "大すぽんっ！");
-    renderZukan();
-  }
-  updateTileVisual(id);
-  showFieldMessage("✨ 採取完了！");
-  hideGauge(true);
-  updateCounters();
-}
-
-function cancelHold() {
-  if (holdState) clearInterval(holdState.interval);
-  holdState = null;
-  hideGauge(false);
-}
-
-function startHold(id) {
-  if (holdState) cancelHold();
-  const tile = tiles.find((t) => t.id === id);
-  showGauge(id, tile ? tile.emoji : "🌟");
-  const startTime = Date.now();
-  const interval = setInterval(() => {
-    const p = Math.min(100, ((Date.now() - startTime) / HOLD_DURATION) * 100);
-    updateGauge(p);
-    if (p >= 100) {
-      clearInterval(interval);
-      holdState = null;
-      pullRare(id);
-    }
-  }, 40);
-  holdState = { id, interval };
-}
-
-function triggerShake(id) {
-  const el = getTileEl(id);
-  if (!el) return;
-  el.classList.add("shake");
-  setTimeout(() => el.classList.remove("shake"), 300);
-}
-
-function triggerResist(id) {
-  const el = getTileEl(id);
-  if (!el || el.dataset.resisting) return;
-  el.dataset.resisting = "1";
-  el.classList.add("resist");
-  setTimeout(() => { el.classList.remove("resist"); delete el.dataset.resisting; }, 250);
-}
-
-function checkAndPullAt(x, y) {
-  const found = tileAreas.find(a => x >= a.left && x <= a.right && y >= a.top && y <= a.bottom);
-  if (!found) return;
-  
-  const id = found.id;
-  const tile = tiles.find((t) => t.id === id);
-  if (!tile || (tile.cleared && tile.type !== "veggie")) return;
-  if (tile.type === "rare") { triggerResist(id); return; }
-  if (isProtected(tile))   { triggerShake(id);  return; }
-  if (canDragPull(tile))   pullWeed(id);
-}
-
-function cacheTileAreas() {
-  tileAreas = [];
-  tiles.forEach((tile) => {
-    const el = getTileEl(tile.id);
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    tileAreas.push({
-      id: tile.id,
-      left: rect.left + window.scrollX,
-      right: rect.right + window.scrollX,
-      top: rect.top + window.scrollY,
-      bottom: rect.bottom + window.scrollY
-    });
-  });
-}
-
-function onTileDown(e, id) {
-  e.preventDefault();
-  forceUnlockAudio();
-  
-  const tile = tiles.find((t) => t.id === id);
-  if (!tile) return;
-  
-  if (tile.type === "rare") { startHold(id); return; }
-  
-  dragging = true; 
-  lastX = e.pageX;
-  lastY = e.pageY;
-  
-  if (isProtected(tile)) { 
-    triggerShake(id); 
-  } else if (canDragPull(tile)) { 
-    pullWeed(id); 
-  }
-}
-
-function onPointerMoveGlobal(e) {
-  if (!dragging) return;
-  const currentX = e.pageX;
-  const currentY = e.pageY;
-
-  if (lastX !== null && lastY !== null) {
-    const dx = currentX - lastX;
-    const dy = currentY - lastY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    const steps = Math.ceil(distance / 8); 
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const x = lastX + dx * t;
-      const y = lastY + dy * t;
-      checkAndPullAt(x, y);
-    }
-  } else {
-    checkAndPullAt(currentX, currentY);
-  }
-
-  lastX = currentX;
-  lastY = currentY;
-}
-
-function onPointerUpGlobal() { 
-  dragging = false; 
-  cancelHold(); 
-  lastX = null; 
-  lastY = null; 
-}
-
-function showFinish() {
-  if (document.getElementById("finish-overlay")) return;
-  const overlay = document.createElement("div");
-  overlay.id = "finish-overlay";
-  overlay.innerHTML = `
-    <div class="finish-box">
-      <div class="finish-text">🌸 FINISH! 🌸</div>
-      <div class="finish-sub">庭がきれいになったよ！</div>
-      <button class="finish-reset" id="finishResetBtn">もう一度</button>
-    </div>`;
-  document.body.appendChild(overlay);
-  document.getElementById("finishResetBtn").addEventListener("click", () => {
-    overlay.remove();
-    resetField();
-  });
-}
-
-function setAppHeight() {
-  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  document.getElementById("app").style.height = h + "px";
-}
-
-function fitGridToScreen() {
-  getGridSize();
-  setAppHeight();
-  const field = document.getElementById("field");
-  const grid  = document.getElementById("grid");
-  const gap = TILE_GAP, pad = 16, minSize = 20;
-  const availW = field.clientWidth  - pad;
-  const availH = field.clientHeight - pad;
-  const size = Math.max(Math.min(
-    (availW - gap * (COLS - 1)) / COLS,
-    (availH - gap * (ROWS - 1)) / ROWS
-  ), minSize);
-  
-  grid.style.gridTemplateColumns = `repeat(${COLS}, ${size}px)`;
-  grid.style.gridAutoRows        = `${size}px`;
-  grid.style.gap                 = `${gap}px`;
-  grid.style.width               = (COLS * size + (COLS - 1) * gap) + "px";
-  grid.style.height              = (ROWS * size + (ROWS - 1) * gap) + "px";
-
-  setTimeout(cacheTileAreas, 0);
-}
-
-window.addEventListener("resize", fitGridToScreen);
-window.addEventListener("orientationchange", fitGridToScreen);
-if (window.visualViewport) window.visualViewport.addEventListener("resize", fitGridToScreen);
-
-function renderZukan() {
-  const foundCount = RARE_WEEDS.filter((w) => (totalPulls[w.name] || 0) > 0).length;
-  document.getElementById("zukanCount").textContent = `${foundCount}/${RARE_WEEDS.length}`;
-  const list = document.getElementById("zukanList");
-  list.innerHTML = "";
-  const zukanGrid = document.createElement("div");
-  zukanGrid.className = "zukan-grid";
-  RARE_WEEDS.forEach((w) => {
-    const count = totalPulls[w.name] || 0;
-    const found = count > 0;
-    const card  = document.createElement("div");
-    card.className = "zukan-card" + (found ? " found" : " locked");
-    card.innerHTML = `
-      <span class="zukan-icon">${found ? w.icon : "❓"}</span>
-      <div class="zukan-name">${found ? w.name : "？？？？？"}</div>
-      ${found ? `<div class="zukan-desc">${w.desc}</div><div class="zukan-pulls">これまで ${count} 本</div>` : ""}`;
-    zukanGrid.appendChild(card);
-  });
-  list.appendChild(zukanGrid);
-}
-
-function resetField() {
-  tiles = buildField();
-  cancelHold();
-  dragging = false;
-  hasShownVeggieCompleteMsg = false; 
-  renderField();
-  renderZukan();
-}
-
-const muteBtn = document.getElementById("muteBtn");
-if (muteBtn) {
-  muteBtn.addEventListener("click", () => {
-    forceUnlockAudio(); 
-    isMuted = !isMuted;
-    muteBtn.textContent = isMuted ? "🔇 消音" : "🔊 音あり";
-    muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
-  });
-}
-
-document.addEventListener("pointermove",   onPointerMoveGlobal);
-document.addEventListener("pointerup",     onPointerUpGlobal);
-document.addEventListener("pointercancel", onPointerUpGlobal);
-document.addEventListener("contextmenu",   (e) => e.preventDefault());
-
-document.getElementById("zukanOpenBtn").addEventListener("click", () => {
-  document.getElementById("modalOverlay").classList.add("open");
-});
-document.getElementById("zukanCloseBtn").addEventListener("click", () => {
-  document.getElementById("modalOverlay").classList.remove("open");
-});
-document.getElementById("modalOverlay").addEventListener("click", (e) => {
-  if (e.target.id === "modalOverlay") e.target.classList.remove("open");
-});
-document.getElementById("resetBtn").addEventListener("click", resetField);
-
-initAudioSystem();
-resetField();
