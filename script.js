@@ -36,7 +36,7 @@ let lastY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
-// ---- 音響・ミュシステム ----
+// ---- 音響・ミュートシステム ----
 let audioCtx = null;
 let ponBuffer = null;
 let isMuted = false;
@@ -59,7 +59,6 @@ function initAudioSystem() {
   }
 }
 
-// iOSの頑固なオーディオガードを強制解除する処理
 function forceUnlockAudio() {
   initAudioSystem();
   if (!audioCtx) return;
@@ -68,13 +67,12 @@ function forceUnlockAudio() {
     audioCtx.resume();
   }
   
-  // iOS向け：ユーザーが触れた瞬間に「音量0の無音」を流してブラウザの再生許可を勝ち取る
   try {
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
     oscillator.type = 'sine';
     oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
-    gainNode.gain.setValueAtTime(0, audioCtx.currentTime); // 完全無音
+    gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
     oscillator.connect(gainNode);
     gainNode.connect(audioCtx.destination);
     oscillator.start(0);
@@ -84,7 +82,6 @@ function forceUnlockAudio() {
   }
 }
 
-// ユーザーがあらゆる操作をした瞬間にロック解除を試みる
 document.addEventListener("click", forceUnlockAudio);
 document.addEventListener("touchstart", forceUnlockAudio, { passive: true });
 document.addEventListener("touchend", forceUnlockAudio);
@@ -179,7 +176,9 @@ function renderField() {
   forceRenameTitle(); 
 
   const grid = document.getElementById("grid");
+  if (!grid) return;
   grid.innerHTML = "";
+  
   tiles.forEach((tile) => {
     const div = document.createElement("div");
     div.className = "tile";
@@ -197,7 +196,10 @@ function renderField() {
     grid.appendChild(div);
     updateTileVisual(tile.id);
   });
-  document.getElementById("totalClearable").textContent = TOTAL_CLEARABLE;
+  
+  const totalClearableEl = document.getElementById("totalClearable");
+  if (totalClearableEl) totalClearableEl.textContent = TOTAL_CLEARABLE;
+  
   updateCounters();
   fitGridToScreen();
 }
@@ -231,9 +233,16 @@ function updateTileVisual(id) {
 function updateCounters() {
   const clearedCount = tiles.filter(countsAsPulled).length;
   const pct = TOTAL_CLEARABLE ? Math.round((clearedCount / TOTAL_CLEARABLE) * 100) : 0;
-  document.getElementById("clearedCount").textContent = clearedCount;
-  document.getElementById("pctText").textContent = pct + "%";
-  document.getElementById("progressFill").style.width = pct + "%";
+  
+  const clearedCountEl = document.getElementById("clearedCount");
+  if (clearedCountEl) clearedCountEl.textContent = clearedCount;
+  
+  const pctTextEl = document.getElementById("pctText");
+  if (pctTextEl) pctTextEl.textContent = pct + "%";
+  
+  const progressFillEl = document.getElementById("progressFill");
+  if (progressFillEl) progressFillEl.style.width = pct + "%";
+  
   if (pct >= 100) showFinish();
 }
 
@@ -254,6 +263,7 @@ function showFieldMessage(text) {
   const existing = document.getElementById("field-msg");
   if (existing) existing.remove();
   const field = document.getElementById("field");
+  if (!field) return;
   const div = document.createElement("div");
   div.id = "field-msg";
   div.textContent = text;
@@ -411,7 +421,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); // 触った瞬間に確実にロックを解除
+  forceUnlockAudio(); 
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -472,15 +482,21 @@ function showFinish() {
       <button class="finish-reset" id="finishResetBtn">もう一度</button>
     </div>`;
   document.body.appendChild(overlay);
-  document.getElementById("finishResetBtn").addEventListener("click", () => {
-    overlay.remove();
-    resetField();
-  });
+  
+  const btn = document.getElementById("finishResetBtn");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      overlay.remove();
+      resetField();
+    });
+  }
 }
 
 function setAppHeight() {
+  const app = document.getElementById("app");
+  if (!app) return;
   const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  document.getElementById("app").style.height = h + "px";
+  app.style.height = h + "px";
 }
 
 function fitGridToScreen() {
@@ -488,6 +504,8 @@ function fitGridToScreen() {
   setAppHeight();
   const field = document.getElementById("field");
   const grid  = document.getElementById("grid");
+  if (!field || !grid) return;
+  
   const gap = TILE_GAP, pad = 16, minSize = 20;
   const availW = field.clientWidth  - pad;
   const availH = field.clientHeight - pad;
@@ -511,9 +529,13 @@ if (window.visualViewport) window.visualViewport.addEventListener("resize", fitG
 
 function renderZukan() {
   const foundCount = RARE_WEEDS.filter((w) => (totalPulls[w.name] || 0) > 0).length;
-  document.getElementById("zukanCount").textContent = `${foundCount}/${RARE_WEEDS.length}`;
+  const zukanCountEl = document.getElementById("zukanCount");
+  if (zukanCountEl) zukanCountEl.textContent = `${foundCount}/${RARE_WEEDS.length}`;
+  
   const list = document.getElementById("zukanList");
+  if (!list) return;
   list.innerHTML = "";
+  
   const zukanGrid = document.createElement("div");
   zukanGrid.className = "zukan-grid";
   RARE_WEEDS.forEach((w) => {
@@ -539,33 +561,45 @@ function resetField() {
   renderZukan();
 }
 
-// ミュートボタンの制御（ヘッダーのボタン1つに集約）
-const muteBtn = document.getElementById("muteBtn");
-if (muteBtn) {
-  muteBtn.addEventListener("click", () => {
-    forceUnlockAudio(); 
-    isMuted = !isMuted;
-    muteBtn.textContent = isMuted ? "🔇" : "🔊";
-    muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
-  });
-}
-
 document.addEventListener("pointermove",   onPointerMoveGlobal);
 document.addEventListener("pointerup",     onPointerUpGlobal);
 document.addEventListener("pointercancel", onPointerUpGlobal);
 document.addEventListener("contextmenu",   (e) => e.preventDefault());
 
-document.getElementById("zukanOpenBtn").addEventListener("click", () => {
-  document.getElementById("modalOverlay").classList.add("open");
-});
-document.getElementById("zukanCloseBtn").addEventListener("click", () => {
-  document.getElementById("modalOverlay").classList.remove("open");
-});
-document.getElementById("modalOverlay").addEventListener("click", (e) => {
-  if (e.target.id === "modalOverlay") e.target.classList.remove("open");
-});
-document.getElementById("resetBtn").addEventListener("click", resetField);
+// ---- 安全なイベントリスナー登録 ----
+window.addEventListener("DOMContentLoaded", () => {
+  const muteBtn = document.getElementById("muteBtn");
+  if (muteBtn) {
+    muteBtn.addEventListener("click", () => {
+      forceUnlockAudio(); 
+      isMuted = !isMuted;
+      muteBtn.textContent = isMuted ? "🔇" : "🔊";
+      muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
+    });
+  }
 
-initAudioSystem();
-resetField();
-resetField();
+  const zukanOpenBtn = document.getElementById("zukanOpenBtn");
+  const modalOverlay = document.getElementById("modalOverlay");
+  if (zukanOpenBtn && modalOverlay) {
+    zukanOpenBtn.addEventListener("click", () => modalOverlay.classList.add("open"));
+  }
+
+  const zukanCloseBtn = document.getElementById("zukanCloseBtn");
+  if (zukanCloseBtn && modalOverlay) {
+    zukanCloseBtn.addEventListener("click", () => modalOverlay.classList.remove("open"));
+  }
+
+  if (modalOverlay) {
+    modalOverlay.addEventListener("click", (e) => {
+      if (e.target.id === "modalOverlay") modalOverlay.classList.remove("open");
+    });
+  }
+
+  const resetBtn = document.getElementById("resetBtn");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", resetField);
+  }
+
+  initAudioSystem();
+  resetField();
+});
