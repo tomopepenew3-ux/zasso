@@ -36,10 +36,10 @@ let lastY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
-// ---- 音響・ミュートシステム（きれいに統合） ----
+// ---- 🛠️ 音響・ミュートシステム（確実な初期化＆自動解除に修正） ----
 let audioCtx = null;
 let ponBuffer = null;
-let isMuted = false;
+let isMuted = false; // 最初は音ありからスタート！
 
 function initAudioSystem() {
   if (audioCtx) return;
@@ -47,23 +47,23 @@ function initAudioSystem() {
     const ContextClass = window.AudioContext || window.webkitAudioContext;
     audioCtx = new ContextClass();
     
-    // ページロード時に即座にmp3を取得してバックグラウンドでデコード
+    // バックグラウンドで即fetchしてデコード
     fetch("pon.mp3")
       .then(r => {
-        if (!r.ok) throw new Error("音源ファイルの取得に失敗しました");
+        if (!r.ok) throw new Error("音源の取得に失敗しました");
         return r.arrayBuffer();
       })
       .then(b => audioCtx.decodeAudioData(b))
       .then(decoded => {
         ponBuffer = decoded;
       })
-      .catch(e => console.error("音源のロード・デコードエラー:", e));
+      .catch(e => console.error("音源エラー:", e));
   } catch (e) {
-    console.error("Web Audio API非対応環境です:", e);
+    console.error("Web Audio API非対応:", e);
   }
 }
 
-// ユーザー操作時にブラウザの音響制限を解除する関数
+// ユーザーが画面のどこかをタッチした瞬間にミュートロックを完全に破壊する関数
 function forceUnlockAudio() {
   if (!audioCtx) initAudioSystem();
   if (audioCtx && audioCtx.state === "suspended") {
@@ -72,15 +72,12 @@ function forceUnlockAudio() {
 }
 
 function playPon() {
-  if (isMuted) return; 
-  if (!audioCtx) initAudioSystem();
-  if (!audioCtx) return;
+  if (isMuted) return; // ミュート中なら絶対に鳴らさない
   
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
+  // 再生直前にも念のためロック解除を走らせる
+  forceUnlockAudio();
   
-  if (!ponBuffer) return; // デコードが完了する前はスキップ
+  if (!audioCtx || !ponBuffer) return;
   
   try {
     const source = audioCtx.createBufferSource();
@@ -92,19 +89,12 @@ function playPon() {
   }
 }
 
-// ヘッダーとフッターのミュートボタンの見た目を連動させる関数
-function updateMuteButtons() {
-  const headerBtn = document.getElementById("muteBtnHeader");
-  const footerBtn = document.getElementById("muteBtnFooter");
-  
-  if (headerBtn) {
-    headerBtn.textContent = isMuted ? "🔇" : "🔊";
-    headerBtn.style.opacity = isMuted ? "0.5" : "1.0";
-  }
-  if (footerBtn) {
-    footerBtn.textContent = isMuted ? "🔇 消音" : "🔊 音あり";
-    footerBtn.style.opacity = isMuted ? "0.5" : "1.0";
-  }
+// ボタンの表示更新（1つだけに簡略化）
+function updateMuteButton() {
+  const btn = document.getElementById("muteBtn");
+  if (!btn) return;
+  btn.textContent = isMuted ? "🔇" : "🔊";
+  btn.style.opacity = isMuted ? "0.5" : "1.0";
 }
 
 // ---- ゲームロジックの関数群 ----
@@ -168,14 +158,10 @@ function buildField() {
   });
 }
 
-function forceRenameTitle() {
+function renderField() {
   document.title = "雑草すっぽん！";
   const mainTitleEl = document.querySelector(".header-title");
   if (mainTitleEl) mainTitleEl.textContent = "雑草すっぽん！";
-}
-
-function renderField() {
-  forceRenameTitle(); 
 
   const grid = document.getElementById("grid");
   if (!grid) return;
@@ -286,7 +272,6 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-// 長押しエフェクトの制御
 function showGauge(id, rareEmoji) {
   const overlay = document.getElementById("gauge-overlay");
   const el = getTileEl(id);
@@ -424,7 +409,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); // タッチした瞬間に音響を制限解除
+  forceUnlockAudio(); // 画面をタッチした最速のタイミングで音を鳴らせる状態にする
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -564,36 +549,26 @@ function resetField() {
   renderZukan();
 }
 
-// 🟩 前回の回答で消去してしまっていた、最重要グローバルイベントを完全に配置！
+// ---- グローバルイベント ----
 document.addEventListener("pointermove",   onPointerMoveGlobal);
 document.addEventListener("pointerup",     onPointerUpGlobal);
 document.addEventListener("pointercancel", onPointerUpGlobal);
 document.addEventListener("contextmenu",   (e) => e.preventDefault());
 
-// 音響制限解除用のイベント
+// 🟩 画面のどこかをタッチした時点で即時に音響制限を解除するためのリスナ
 document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
 document.addEventListener("click", forceUnlockAudio);
 document.addEventListener("touchend", forceUnlockAudio);
 
-// ---- ページ読み込み完了時のイベント登録 ----
 window.addEventListener("DOMContentLoaded", () => {
-  // ヘッダーボタンの登録
-  const headerBtn = document.getElementById("muteBtnHeader");
-  if (headerBtn) {
-    headerBtn.addEventListener("click", () => {
+  // 音量ボタンの制御
+  const muteBtn = document.getElementById("muteBtn");
+  if (muteBtn) {
+    muteBtn.addEventListener("click", (e) => {
+      e.stopPropagation(); // 重複処理を防ぐ
       forceUnlockAudio(); 
       isMuted = !isMuted;
-      updateMuteButtons();
-    });
-  }
-
-  // フッターボタンの登録（IDを変更したもの）
-  const footerBtn = document.getElementById("muteBtnFooter");
-  if (footerBtn) {
-    footerBtn.addEventListener("click", () => {
-      forceUnlockAudio();
-      isMuted = !isMuted;
-      updateMuteButtons();
+      updateMuteButton();
     });
   }
 
@@ -613,7 +588,7 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // モーダル外クリックで閉じる
+  // モーダル外クリック
   const modalOverlay = document.getElementById("modalOverlay");
   if (modalOverlay) {
     modalOverlay.addEventListener("click", (e) => {
@@ -621,14 +596,14 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // リセットボタン
+  // リセット
   const resetBtn = document.getElementById("resetBtn");
   if (resetBtn) {
     resetBtn.addEventListener("click", resetField);
   }
 
-  // 初期化実行
+  // 初期起動
   initAudioSystem();
   resetField();
-  updateMuteButtons(); // 初期状態の音量ボタンの見た目を反映
+  updateMuteButton(); 
 });
