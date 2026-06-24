@@ -20,7 +20,7 @@ const RARE_WEEDS = [
 const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
-const HOLD_DURATION = 1100;
+const HOLD_DURATION = 1100; // 抜き取りにかかる時間（1.1秒）
 const TILE_GAP = 4;
 
 let COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
@@ -203,7 +203,6 @@ function updateTileVisual(id) {
 }
 
 function updateCounters() {
-  // 長押し中は上のバーを採取ゲージとして使うため、カウンター更新をスキップする
   if (holdState) return;
 
   const clearedCount = tiles.filter(countsAsPulled).length;
@@ -218,7 +217,7 @@ function updateCounters() {
   const pfEl = document.getElementById("progressFill");
   if (pfEl) {
     pfEl.style.width = pct + "%";
-    pfEl.style.background = ""; // 通常色（style.cssの緑色）に戻す
+    pfEl.style.background = ""; 
   }
 
   const plEl = document.getElementById("progressLabel");
@@ -276,7 +275,7 @@ function showBarGauge(id, rareEmoji) {
   const pfEl = document.getElementById("progressFill");
   if (pfEl) {
     pfEl.style.width = "0%";
-    pfEl.style.background = "linear-gradient(90deg, #ff9800, #ffeb3b)"; // 金色・オレンジ系の色に変身
+    pfEl.style.background = "linear-gradient(90deg, #ff9800, #ffeb3b)"; 
   }
 }
 
@@ -289,7 +288,6 @@ function updateBarGauge(pct) {
 }
 
 function hideBarGauge() {
-  // 採取が終わったら元の達成率カウンターに戻す
   holdState = null;
   updateCounters();
 }
@@ -347,13 +345,17 @@ function startHold(id) {
   
   const startTime = Date.now();
   const interval = setInterval(() => {
-    const p = Math.min(100, ((Date.now() - startTime) / HOLD_DURATION) * 100);
+    const elapsed = Date.now() - startTime;
+    const p = Math.min(100, (elapsed / HOLD_DURATION) * 100);
+    
     updateBarGauge(p);
+    
+    // 完全に 100% に到達したときだけ引き抜く
     if (p >= 100) {
       clearInterval(interval);
       pullRare(id);
     }
-  }, 40);
+  }, 20); // タイマーの更新を細かく（20ミリ秒ごと）して滑らかにしました
   holdState = { id, interval };
 }
 
@@ -587,7 +589,6 @@ window.addEventListener("DOMContentLoaded", () => {
     rBtn.addEventListener("click", resetField);
   }
 
-  // 画面タッチ時に音響をアンロック
   document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
   document.addEventListener("click", forceUnlockAudio, { passive: true });
   document.addEventListener("touchend", forceUnlockAudio, { passive: true });
