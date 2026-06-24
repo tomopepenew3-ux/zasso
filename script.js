@@ -36,7 +36,7 @@ let lastY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
-// ---- 🎵 音響・ミュートシステム（競合を排除したクリーン版） ----
+// ---- 🛠️ 音響システム ----
 let audioCtx = null;
 let ponBuffer = null;
 let isMuted = false;
@@ -51,13 +51,12 @@ function initAudioSystem() {
       .then(r => r.arrayBuffer())
       .then(b => audioCtx.decodeAudioData(b))
       .then(decoded => { ponBuffer = decoded; })
-      .catch(e => console.error("音源ファイルの読み込みエラー:", e));
+      .catch(e => console.error("音源エラー:", e));
   } catch (e) {
-    console.error("Web Audio API非対応環境です", e);
+    console.error("Web Audio API非対応:", e);
   }
 }
 
-// 画面を触った瞬間にブラウザの音響制限を解除する
 function forceUnlockAudio() {
   if (!audioCtx) initAudioSystem();
   if (audioCtx && audioCtx.state === "suspended") {
@@ -79,7 +78,7 @@ function playPon() {
   }
 }
 
-// ---- 🌱 ゲームロジック ----
+// ---- 🌱 時雨さんのゲームロジック ----
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function isWeedCover(tile)      { return tile.type === "veggie" && tile.weedCover; }
@@ -150,6 +149,7 @@ function renderField() {
   forceRenameTitle(); 
 
   const grid = document.getElementById("grid");
+  if (!grid) return;
   grid.innerHTML = "";
   tiles.forEach((tile) => {
     const div = document.createElement("div");
@@ -168,7 +168,10 @@ function renderField() {
     grid.appendChild(div);
     updateTileVisual(tile.id);
   });
-  document.getElementById("totalClearable").textContent = TOTAL_CLEARABLE;
+  
+  const tcEl = document.getElementById("totalClearable");
+  if (tcEl) tcEl.textContent = TOTAL_CLEARABLE;
+  
   updateCounters();
   fitGridToScreen();
 }
@@ -202,9 +205,16 @@ function updateTileVisual(id) {
 function updateCounters() {
   const clearedCount = tiles.filter(countsAsPulled).length;
   const pct = TOTAL_CLEARABLE ? Math.round((clearedCount / TOTAL_CLEARABLE) * 100) : 0;
-  document.getElementById("clearedCount").textContent = clearedCount;
-  document.getElementById("pctText").textContent = pct + "%";
-  document.getElementById("progressFill").style.width = pct + "%";
+  
+  const ccEl = document.getElementById("clearedCount");
+  if (ccEl) ccEl.textContent = clearedCount;
+  
+  const ptEl = document.getElementById("pctText");
+  if (ptEl) ptEl.textContent = pct + "%";
+  
+  const pfEl = document.getElementById("progressFill");
+  if (pfEl) pfEl.style.width = pct + "%";
+  
   if (pct >= 100) showFinish();
 }
 
@@ -225,6 +235,7 @@ function showFieldMessage(text) {
   const existing = document.getElementById("field-msg");
   if (existing) existing.remove();
   const field = document.getElementById("field");
+  if (!field) return;
   const div = document.createElement("div");
   div.id = "field-msg";
   div.textContent = text;
@@ -245,7 +256,6 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-// 🌟 長押しゲージ処理
 function showGauge(id, rareEmoji) {
   const overlay = document.getElementById("gauge-overlay");
   const el = getTileEl(id);
@@ -383,7 +393,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); // タッチ時に音響制限解除
+  forceUnlockAudio(); 
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -444,15 +454,21 @@ function showFinish() {
       <button class="finish-reset" id="finishResetBtn">もう一度</button>
     </div>`;
   document.body.appendChild(overlay);
-  document.getElementById("finishResetBtn").addEventListener("click", () => {
-    overlay.remove();
-    resetField();
-  });
+  
+  const frBtn = document.getElementById("finishResetBtn");
+  if (frBtn) {
+    frBtn.addEventListener("click", () => {
+      overlay.remove();
+      resetField();
+    });
+  }
 }
 
 function setAppHeight() {
+  const app = document.getElementById("app");
+  if (!app) return;
   const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  document.getElementById("app").style.height = h + "px";
+  app.style.height = h + "px";
 }
 
 function fitGridToScreen() {
@@ -460,6 +476,8 @@ function fitGridToScreen() {
   setAppHeight();
   const field = document.getElementById("field");
   const grid  = document.getElementById("grid");
+  if (!field || !grid) return;
+  
   const gap = TILE_GAP, pad = 16, minSize = 20;
   const availW = field.clientWidth  - pad;
   const availH = field.clientHeight - pad;
@@ -483,9 +501,13 @@ if (window.visualViewport) window.visualViewport.addEventListener("resize", fitG
 
 function renderZukan() {
   const foundCount = RARE_WEEDS.filter((w) => (totalPulls[w.name] || 0) > 0).length;
-  document.getElementById("zukanCount").textContent = `${foundCount}/${RARE_WEEDS.length}`;
+  const zcEl = document.getElementById("zukanCount");
+  if (zcEl) zcEl.textContent = `${foundCount}/${RARE_WEEDS.length}`;
+  
   const list = document.getElementById("zukanList");
+  if (!list) return;
   list.innerHTML = "";
+  
   const zukanGrid = document.createElement("div");
   zukanGrid.className = "zukan-grid";
   RARE_WEEDS.forEach((w) => {
@@ -511,38 +533,57 @@ function resetField() {
   renderZukan();
 }
 
-// ---- グローバルイベント・UI連携 ----
-const muteBtn = document.getElementById("muteBtn");
-if (muteBtn) {
-  muteBtn.addEventListener("click", () => {
-    forceUnlockAudio(); 
-    isMuted = !isMuted;
-    muteBtn.textContent = isMuted ? "🔇" : "🔊";
-    muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
-  });
-}
+// ---- ⚙️ グローバルイベントとUI連携 ----
+window.addEventListener("DOMContentLoaded", () => {
+  const muteBtn = document.getElementById("muteBtn");
+  if (muteBtn) {
+    muteBtn.addEventListener("click", () => {
+      forceUnlockAudio(); 
+      isMuted = !isMuted;
+      muteBtn.textContent = isMuted ? "🔇" : "🔊";
+      muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
+    });
+  }
 
-document.addEventListener("pointermove",   onPointerMoveGlobal);
-document.addEventListener("pointerup",     onPointerUpGlobal);
-document.addEventListener("pointercancel", onPointerUpGlobal);
-document.addEventListener("contextmenu",   (e) => e.preventDefault());
+  document.addEventListener("pointermove",   onPointerMoveGlobal);
+  document.addEventListener("pointerup",     onPointerUpGlobal);
+  document.addEventListener("pointercancel", onPointerUpGlobal);
+  document.addEventListener("contextmenu",   (e) => e.preventDefault());
 
-document.getElementById("zukanOpenBtn").addEventListener("click", () => {
-  document.getElementById("modalOverlay").classList.add("open");
+  const zoBtn = document.getElementById("zukanOpenBtn");
+  if (zoBtn) {
+    zoBtn.addEventListener("click", () => {
+      const mo = document.getElementById("modalOverlay");
+      if (mo) mo.classList.add("open");
+    });
+  }
+
+  const zcBtn = document.getElementById("zukanCloseBtn");
+  if (zcBtn) {
+    zcBtn.addEventListener("click", () => {
+      const mo = document.getElementById("modalOverlay");
+      if (mo) mo.classList.remove("open");
+    });
+  }
+
+  const mo = document.getElementById("modalOverlay");
+  if (mo) {
+    mo.addEventListener("click", (e) => {
+      if (e.target.id === "modalOverlay") e.target.classList.remove("open");
+    });
+  }
+
+  const rBtn = document.getElementById("resetBtn");
+  if (rBtn) {
+    rBtn.addEventListener("click", resetField);
+  }
+
+  // 初回画面タッチ・クリック時にブラウザの音響制限を解除する
+  document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
+  document.addEventListener("click", forceUnlockAudio, { passive: true });
+  document.addEventListener("touchend", forceUnlockAudio, { passive: true });
+
+  // 起動
+  initAudioSystem();
+  resetField();
 });
-document.getElementById("zukanCloseBtn").addEventListener("click", () => {
-  document.getElementById("modalOverlay").classList.remove("open");
-});
-document.getElementById("modalOverlay").addEventListener("click", (e) => {
-  if (e.target.id === "modalOverlay") e.target.classList.remove("open");
-});
-document.getElementById("resetBtn").addEventListener("click", resetField);
-
-// 画面のどこかを触った瞬間に音響をアンロック
-document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
-document.addEventListener("click", forceUnlockAudio, { passive: true });
-document.addEventListener("touchend", forceUnlockAudio, { passive: true });
-
-// 起動処理
-initAudioSystem();
-resetField();
