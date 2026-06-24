@@ -20,7 +20,7 @@ const RARE_WEEDS = [
 const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
-const HOLD_DURATION = 100; // ★即座に抜けるように時間を短縮（0.1秒）
+const HOLD_DURATION = 1100; // ★オレンジバーをじっくり見せるため1.1秒に設定
 const TILE_GAP = 4;
 
 let COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
@@ -269,17 +269,17 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-// ★ 最初からマックス（100%）の見た目にする
+// ★ オレンジバーが0%からギュインと伸びる演出用のベース
 function showBarGauge(id, rareEmoji) {
   const plEl = document.getElementById("progressLabel");
   if (plEl) plEl.textContent = `抜き取り中... ${rareEmoji}`;
 
   const ptEl = document.getElementById("pctText");
-  if (ptEl) ptEl.textContent = "100%";
+  if (ptEl) ptEl.textContent = "0%";
 
   const pfEl = document.getElementById("progressFill");
   if (pfEl) {
-    pfEl.style.width = "100%";
+    pfEl.style.width = "0%";
     pfEl.style.background = "linear-gradient(90deg, #ff9800, #ffeb3b)"; 
   }
 }
@@ -326,13 +326,21 @@ function pullRare(id) {
   if (!tile || tile.type !== "rare" || tile.cleared) return;
   tile.cleared = true;
   playPon();
+  
   if (tile.rareInfo) {
-    totalPulls[tile.rareInfo.name] = (totalPulls[tile.rareInfo.name] || 0) + 1;
-    addFloatEffect(id, "大すぽんっ！");
+    const currentCount = totalPulls[tile.rareInfo.name] || 0;
+    totalPulls[tile.rareInfo.name] = currentCount + 1;
+    
+    // ★ 中央の文字重なりを防ぐため「大すぽんっ！」を削除し、条件分岐メッセージのみを画面中央に表示
+    if (currentCount === 0) {
+      showFieldMessage("✨ 図鑑を見よう！"); // 1回目
+    } else {
+      showFieldMessage("✨ 採取完了！"); // 2回目以降
+    }
+    
     renderZukan();
   }
   updateTileVisual(id);
-  showFieldMessage("✨ 採取完了！"); // ★草の名前を出さずシンプルに固定
   hideBarGauge();
 }
 
@@ -360,8 +368,8 @@ function startHold(id) {
       return;
     }
     const elapsed = Date.now() - startTime;
-    // ★ 即座に100%にする
-    const p = 100;
+    // ★ 1秒かけてしっかり100%まで上昇させる
+    const p = Math.min(100, (elapsed / HOLD_DURATION) * 100);
     
     updateBarGauge(p);
     
