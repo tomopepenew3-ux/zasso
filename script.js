@@ -36,10 +36,10 @@ let lastY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
-// ---- 音響システム（一本化確定版） ----
+// ---- 音響システム（一本化） ----
 let audioCtx = null;
 let ponBuffer = null;
-let isMuted = false; // 最初は「音あり（ミュートではない）」でスタート！
+let isMuted = false; // 最初は「音あり」からスタート！
 
 function initAudioSystem() {
   if (audioCtx) return;
@@ -49,7 +49,7 @@ function initAudioSystem() {
     
     fetch("pon.mp3")
       .then(res => {
-        if (!res.ok) throw new Error("ファイルが見つかりません");
+        if (!res.ok) throw new Error("音源ファイルが見つかりません");
         return res.arrayBuffer();
       })
       .then(data => audioCtx.decodeAudioData(data))
@@ -62,7 +62,7 @@ function initAudioSystem() {
   }
 }
 
-// 画面を触った瞬間にブラウザの音響制限を解除する関数
+// 画面を触った瞬間にブラウザの音響制限を解除する関数（しっかり定義！）
 function forceUnlockAudio() {
   if (!audioCtx) initAudioSystem();
   if (!audioCtx) return;
@@ -70,27 +70,15 @@ function forceUnlockAudio() {
   if (audioCtx.state === "suspended") {
     audioCtx.resume();
   }
-  
-  // 空の音を鳴らしてアンロックを確定させる
-  try {
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    oscillator.type = 'sine';
-    gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    oscillator.start(0);
-    oscillator.stop(audioCtx.currentTime + 0.01);
-  } catch (e) {}
 }
 
-// 画面タッチやクリックの瞬間にアンロックを走らせる（最初から鳴るための仕掛け）
+// 最初の操作で確実に音をアンロックするイベント
 document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
 document.addEventListener("click", forceUnlockAudio);
-document.addEventListener("touchstart", forceUnlockAudio, { passive: true });
+document.addEventListener("touchend", forceUnlockAudio);
 
 function playPon() {
-  if (isMuted) return; // ミュート時は絶対に鳴らさない
+  if (isMuted) return; // ミュート時は絶対鳴らさない
   if (!audioCtx) initAudioSystem();
   if (!audioCtx || !ponBuffer) return; 
   
@@ -423,7 +411,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); // タッチした瞬間に確実にアンロック
+  forceUnlockAudio(); // 触った瞬間にオーディオの制限を即時解除！
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -563,12 +551,7 @@ function resetField() {
   renderZukan();
 }
 
-document.addEventListener("pointermove",   onPointerMoveGlobal);
-document.addEventListener("pointerup",     onPointerUpGlobal);
-document.addEventListener("pointercancel", onPointerUpGlobal);
-document.addEventListener("contextmenu",   (e) => e.preventDefault());
-
-// ---- 安全なイベントリスナー登録 ----
+// ---- 正しく整理されたイベント登録 ----
 window.addEventListener("DOMContentLoaded", () => {
   const muteBtn = document.getElementById("muteBtn");
   if (muteBtn) {
