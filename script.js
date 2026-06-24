@@ -355,7 +355,7 @@ function startHold(id) {
       clearInterval(interval);
       pullRare(id);
     }
-  }, 20); // タイマーの更新を細かく（20ミリ秒ごと）して滑らかにしました
+  }, 20); 
   holdState = { id, interval };
 }
 
@@ -375,6 +375,9 @@ function triggerResist(id) {
 }
 
 function checkAndPullAt(x, y) {
+  // ★重要★ レア草を長押し中（holdStateがある時）は、なぞり引き処理を完全にスキップして誤作動を防ぐ
+  if (holdState) return;
+
   const found = tileAreas.find(a => x >= a.left && x <= a.right && y >= a.top && y <= a.bottom);
   if (!found) return;
   
