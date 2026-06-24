@@ -20,7 +20,7 @@ const RARE_WEEDS = [
 const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
-const HOLD_DURATION = 1100; // 抜き取りにかかる時間（1.1秒）
+const HOLD_DURATION = 100; // ★即座に抜けるように時間を短縮（0.1秒）
 const TILE_GAP = 4;
 
 let COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
@@ -33,8 +33,8 @@ let holdState = null;
 
 let lastX = null;
 let lastY = null;
-let startTouchX = null; // ★長押し開始時のX座標
-let startTouchY = null; // ★長押し開始時のY座標
+let startTouchX = null;
+let startTouchY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
@@ -137,7 +137,7 @@ function buildField() {
     if (type === "tree")   emoji = pick(TREE_EMOJI);
     if (type === "veggie") { veggieEmoji = pick(VEGGIE_EMOJI); emoji = pick(WEED_EMOJI); weedCover = true; }
     if (type === "rare") {
-      rareInfo = RARE_WEEDS[idx % RARE_WEEDS.length]; // バラけさせるためインデックス参照に変更
+      rareInfo = RARE_WEEDS[idx % RARE_WEEDS.length];
       emoji = rareInfo.icon;
     }
     return { id: idx, type, emoji, rareInfo, cleared: false, veggieEmoji, weedCover };
@@ -269,17 +269,17 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-// 🌟 上のプログレスバーを「採取ゲージ」に変身させる処理
+// ★ 最初からマックス（100%）の見た目にする
 function showBarGauge(id, rareEmoji) {
   const plEl = document.getElementById("progressLabel");
   if (plEl) plEl.textContent = `抜き取り中... ${rareEmoji}`;
 
   const ptEl = document.getElementById("pctText");
-  if (ptEl) ptEl.textContent = "0%";
+  if (ptEl) ptEl.textContent = "100%";
 
   const pfEl = document.getElementById("progressFill");
   if (pfEl) {
-    pfEl.style.width = "0%";
+    pfEl.style.width = "100%";
     pfEl.style.background = "linear-gradient(90deg, #ff9800, #ffeb3b)"; 
   }
 }
@@ -332,7 +332,7 @@ function pullRare(id) {
     renderZukan();
   }
   updateTileVisual(id);
-  showFieldMessage(`✨ 【${tile.rareInfo.name}】採取完了！`);
+  showFieldMessage("✨ 採取完了！"); // ★草の名前を出さずシンプルに固定
   hideBarGauge();
 }
 
@@ -360,7 +360,8 @@ function startHold(id) {
       return;
     }
     const elapsed = Date.now() - startTime;
-    const p = Math.min(100, (elapsed / HOLD_DURATION) * 100);
+    // ★ 即座に100%にする
+    const p = 100;
     
     updateBarGauge(p);
     
@@ -388,7 +389,6 @@ function triggerResist(id) {
 }
 
 function checkAndPullAt(x, y) {
-  // レア草を長押し中（holdStateがある時）は、なぞり引き処理を完全にスキップして誤作動を防ぐ
   if (holdState) return;
 
   const found = tileAreas.find(a => x >= a.left && x <= a.right && y >= a.top && y <= a.bottom);
@@ -445,7 +445,6 @@ function onTileDown(e, id) {
 }
 
 function onPointerMoveGlobal(e) {
-  // ★レア草長押し中の微小なブレでのキャンセルを防ぐ（30ピクセル以上動いた時だけ移動とみなしてキャンセル）
   if (holdState && startTouchX !== null && startTouchY !== null) {
     const dx = e.pageX - startTouchX;
     const dy = e.pageY - startTouchY;
