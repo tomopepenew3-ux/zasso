@@ -36,10 +36,10 @@ let lastY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
-// ---- 音響システム（一本化） ----
+// ---- 音響・ミュートシステム（きれいに統合） ----
 let audioCtx = null;
 let ponBuffer = null;
-let isMuted = false; // 最初は「音あり」からスタート！
+let isMuted = false;
 
 function initAudioSystem() {
   if (audioCtx) return;
@@ -47,44 +47,40 @@ function initAudioSystem() {
     const ContextClass = window.AudioContext || window.webkitAudioContext;
     audioCtx = new ContextClass();
     
+    // ページロード時に即座にmp3を取得してバックグラウンドでデコード
     fetch("pon.mp3")
-      .then(res => {
-        if (!res.ok) throw new Error("音源ファイルが見つかりません");
-        return res.arrayBuffer();
+      .then(r => {
+        if (!r.ok) throw new Error("音源ファイルの取得に失敗しました");
+        return r.arrayBuffer();
       })
-      .then(data => audioCtx.decodeAudioData(data))
-      .then(buffer => { 
-        ponBuffer = buffer; 
+      .then(b => audioCtx.decodeAudioData(b))
+      .then(decoded => {
+        ponBuffer = decoded;
       })
-      .catch(err => console.error("音源ファイルの読み込み・デコードに失敗:", err));
+      .catch(e => console.error("音源のロード・デコードエラー:", e));
   } catch (e) {
-    console.error("Web Audio API非対応環境です", e);
+    console.error("Web Audio API非対応環境です:", e);
   }
 }
 
-// 画面を触った瞬間にブラウザの音響制限を解除する関数（しっかり定義！）
+// ユーザー操作時にブラウザの音響制限を解除する関数
 function forceUnlockAudio() {
+  if (!audioCtx) initAudioSystem();
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+}
+
+function playPon() {
+  if (isMuted) return; 
   if (!audioCtx) initAudioSystem();
   if (!audioCtx) return;
   
   if (audioCtx.state === "suspended") {
     audioCtx.resume();
   }
-}
-
-// 最初の操作で確実に音をアンロックするイベント
-document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
-document.addEventListener("click", forceUnlockAudio);
-document.addEventListener("touchend", forceUnlockAudio);
-
-function playPon() {
-  if (isMuted) return; // ミュート時は絶対鳴らさない
-  if (!audioCtx) initAudioSystem();
-  if (!audioCtx || !ponBuffer) return; 
   
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
+  if (!ponBuffer) return; // デコードが完了する前はスキップ
   
   try {
     const source = audioCtx.createBufferSource();
@@ -96,6 +92,22 @@ function playPon() {
   }
 }
 
+// ヘッダーとフッターのミュートボタンの見た目を連動させる関数
+function updateMuteButtons() {
+  const headerBtn = document.getElementById("muteBtnHeader");
+  const footerBtn = document.getElementById("muteBtnFooter");
+  
+  if (headerBtn) {
+    headerBtn.textContent = isMuted ? "🔇" : "🔊";
+    headerBtn.style.opacity = isMuted ? "0.5" : "1.0";
+  }
+  if (footerBtn) {
+    footerBtn.textContent = isMuted ? "🔇 消音" : "🔊 音あり";
+    footerBtn.style.opacity = isMuted ? "0.5" : "1.0";
+  }
+}
+
+// ---- ゲームロジックの関数群 ----
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function isWeedCover(tile)      { return tile.type === "veggie" && tile.weedCover; }
@@ -274,6 +286,7 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
+// 長押しエフェクトの制御
 function showGauge(id, rareEmoji) {
   const overlay = document.getElementById("gauge-overlay");
   const el = getTileEl(id);
@@ -411,7 +424,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); // 触った瞬間にオーディオの制限を即時解除！
+  forceUnlockAudio(); // タッチした瞬間に音響を制限解除
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -551,40 +564,71 @@ function resetField() {
   renderZukan();
 }
 
-// ---- 正しく整理されたイベント登録 ----
+// 🟩 前回の回答で消去してしまっていた、最重要グローバルイベントを完全に配置！
+document.addEventListener("pointermove",   onPointerMoveGlobal);
+document.addEventListener("pointerup",     onPointerUpGlobal);
+document.addEventListener("pointercancel", onPointerUpGlobal);
+document.addEventListener("contextmenu",   (e) => e.preventDefault());
+
+// 音響制限解除用のイベント
+document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
+document.addEventListener("click", forceUnlockAudio);
+document.addEventListener("touchend", forceUnlockAudio);
+
+// ---- ページ読み込み完了時のイベント登録 ----
 window.addEventListener("DOMContentLoaded", () => {
-  const muteBtn = document.getElementById("muteBtn");
-  if (muteBtn) {
-    muteBtn.addEventListener("click", () => {
+  // ヘッダーボタンの登録
+  const headerBtn = document.getElementById("muteBtnHeader");
+  if (headerBtn) {
+    headerBtn.addEventListener("click", () => {
       forceUnlockAudio(); 
       isMuted = !isMuted;
-      muteBtn.textContent = isMuted ? "🔇" : "🔊";
-      muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
+      updateMuteButtons();
     });
   }
 
+  // フッターボタンの登録（IDを変更したもの）
+  const footerBtn = document.getElementById("muteBtnFooter");
+  if (footerBtn) {
+    footerBtn.addEventListener("click", () => {
+      forceUnlockAudio();
+      isMuted = !isMuted;
+      updateMuteButtons();
+    });
+  }
+
+  // 図鑑を開く
   const zukanOpenBtn = document.getElementById("zukanOpenBtn");
-  const modalOverlay = document.getElementById("modalOverlay");
-  if (zukanOpenBtn && modalOverlay) {
-    zukanOpenBtn.addEventListener("click", () => modalOverlay.classList.add("open"));
+  if (zukanOpenBtn) {
+    zukanOpenBtn.addEventListener("click", () => {
+      document.getElementById("modalOverlay").classList.add("open");
+    });
   }
 
+  // 図鑑を閉じる
   const zukanCloseBtn = document.getElementById("zukanCloseBtn");
-  if (zukanCloseBtn && modalOverlay) {
-    zukanCloseBtn.addEventListener("click", () => modalOverlay.classList.remove("open"));
+  if (zukanCloseBtn) {
+    zukanCloseBtn.addEventListener("click", () => {
+      document.getElementById("modalOverlay").classList.remove("open");
+    });
   }
 
+  // モーダル外クリックで閉じる
+  const modalOverlay = document.getElementById("modalOverlay");
   if (modalOverlay) {
     modalOverlay.addEventListener("click", (e) => {
-      if (e.target.id === "modalOverlay") modalOverlay.classList.remove("open");
+      if (e.target.id === "modalOverlay") e.target.classList.remove("open");
     });
   }
 
+  // リセットボタン
   const resetBtn = document.getElementById("resetBtn");
   if (resetBtn) {
     resetBtn.addEventListener("click", resetField);
   }
 
+  // 初期化実行
   initAudioSystem();
   resetField();
+  updateMuteButtons(); // 初期状態の音量ボタンの見た目を反映
 });
