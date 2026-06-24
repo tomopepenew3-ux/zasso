@@ -36,13 +36,10 @@ let lastY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
-// ---- 音響・ミュートシステム ----
+// ---- 🎵 音響・ミュートシステム（競合を排除したクリーン版） ----
 let audioCtx = null;
 let ponBuffer = null;
 let isMuted = false;
-let _rawBuf = null;
-let _ponBuf = null;
-let _actx   = null;
 
 function initAudioSystem() {
   if (audioCtx) return;
@@ -50,52 +47,28 @@ function initAudioSystem() {
     const ContextClass = window.AudioContext || window.webkitAudioContext;
     audioCtx = new ContextClass();
     
-    // ページロード時すぐにmp3を取得(ユーザー操作不要)
-fetch("pon.mp3")
-  .then(r => r.arrayBuffer())
-  .then(b => { _rawBuf = b; })
-  .catch(() => {});
-
-function _getCtx() {
-  if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
-  return _actx;
-}
-
-function playPon() {
-  if (muted) return;
-  const ctx = _getCtx();
-  if (ctx.state === "suspended") ctx.resume();
-  if (_ponBuf) {
-    // デコード済みバッファがあればすぐ鳴らす
-    const src = ctx.createBufferSource();
-    src.buffer = _ponBuf;
-    src.connect(ctx.destination);
-    src.start(0);
-  } else if (_rawBuf) {
-    // 初回だけデコードしてから鳴らす
-    ctx.decodeAudioData(_rawBuf.slice(0), decoded => {
-      _ponBuf = decoded;
-      const src = ctx.createBufferSource();
-      src.buffer = _ponBuf;
-      src.connect(ctx.destination);
-      src.start(0);
-    });
+    fetch("pon.mp3")
+      .then(r => r.arrayBuffer())
+      .then(b => audioCtx.decodeAudioData(b))
+      .then(decoded => { ponBuffer = decoded; })
+      .catch(e => console.error("音源ファイルの読み込みエラー:", e));
+  } catch (e) {
+    console.error("Web Audio API非対応環境です", e);
   }
 }
 
-document.addEventListener("click", forceUnlockAudio);
-document.addEventListener("touchend", forceUnlockAudio);
-
-function playPon() {
-  if (isMuted) return; 
+// 画面を触った瞬間にブラウザの音響制限を解除する
+function forceUnlockAudio() {
   if (!audioCtx) initAudioSystem();
-  if (!audioCtx) return;
-  
-  if (audioCtx.state === "suspended") {
+  if (audioCtx && audioCtx.state === "suspended") {
     audioCtx.resume();
   }
+}
+
+function playPon() {
+  if (isMuted || !ponBuffer || !audioCtx) return;
+  if (audioCtx.state === "suspended") audioCtx.resume();
   
-  if (!ponBuffer) return; 
   try {
     const source = audioCtx.createBufferSource();
     source.buffer = ponBuffer;
@@ -106,6 +79,7 @@ function playPon() {
   }
 }
 
+// ---- 🌱 ゲームロジック ----
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function isWeedCover(tile)      { return tile.type === "veggie" && tile.weedCover; }
@@ -271,7 +245,7 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-// 時雨さんのCSS専用長押しエフェクト制御
+// 🌟 長押しゲージ処理
 function showGauge(id, rareEmoji) {
   const overlay = document.getElementById("gauge-overlay");
   const el = getTileEl(id);
@@ -409,7 +383,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio();
+  forceUnlockAudio(); // タッチ時に音響制限解除
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -537,12 +511,13 @@ function resetField() {
   renderZukan();
 }
 
+// ---- グローバルイベント・UI連携 ----
 const muteBtn = document.getElementById("muteBtn");
 if (muteBtn) {
   muteBtn.addEventListener("click", () => {
     forceUnlockAudio(); 
     isMuted = !isMuted;
-    muteBtn.textContent = isMuted ? "🔇 消音" : "🔊 音あり";
+    muteBtn.textContent = isMuted ? "🔇" : "🔊";
     muteBtn.style.opacity = isMuted ? "0.5" : "1.0"; 
   });
 }
@@ -562,12 +537,12 @@ document.getElementById("modalOverlay").addEventListener("click", (e) => {
   if (e.target.id === "modalOverlay") e.target.classList.remove("open");
 });
 document.getElementById("resetBtn").addEventListener("click", resetField);
-document.getElementById("muteBtn").addEventListener("click", () => {
-  muted = !muted;
-  document.getElementById("muteBtn").textContent = muted ? "🔇" : "🔊";
-});
 
+// 画面のどこかを触った瞬間に音響をアンロック
+document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
+document.addEventListener("click", forceUnlockAudio, { passive: true });
+document.addEventListener("touchend", forceUnlockAudio, { passive: true });
 
-    
+// 起動処理
 initAudioSystem();
 resetField();
