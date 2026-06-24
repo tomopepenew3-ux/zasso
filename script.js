@@ -40,6 +40,9 @@ let hasShownVeggieCompleteMsg = false;
 let audioCtx = null;
 let ponBuffer = null;
 let isMuted = false;
+let _rawBuf = null;
+let _ponBuf = null;
+let _actx   = null;
 
 function initAudioSystem() {
   if (audioCtx) return;
@@ -47,20 +50,36 @@ function initAudioSystem() {
     const ContextClass = window.AudioContext || window.webkitAudioContext;
     audioCtx = new ContextClass();
     
-    fetch("pon.mp3")
-      .then(res => res.arrayBuffer())
-      .then(data => audioCtx.decodeAudioData(data))
-      .then(buffer => { ponBuffer = buffer; })
-      .catch(err => console.error("音源ファイルの読み込みに失敗しました:", err));
-  } catch (e) {
-    console.error("Web Audio API非対応環境です", e);
-  }
+    // ページロード時すぐにmp3を取得(ユーザー操作不要)
+fetch("pon.mp3")
+  .then(r => r.arrayBuffer())
+  .then(b => { _rawBuf = b; })
+  .catch(() => {});
+
+function _getCtx() {
+  if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+  return _actx;
 }
 
-function forceUnlockAudio() {
-  initAudioSystem();
-  if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume();
+function playPon() {
+  if (muted) return;
+  const ctx = _getCtx();
+  if (ctx.state === "suspended") ctx.resume();
+  if (_ponBuf) {
+    // デコード済みバッファがあればすぐ鳴らす
+    const src = ctx.createBufferSource();
+    src.buffer = _ponBuf;
+    src.connect(ctx.destination);
+    src.start(0);
+  } else if (_rawBuf) {
+    // 初回だけデコードしてから鳴らす
+    ctx.decodeAudioData(_rawBuf.slice(0), decoded => {
+      _ponBuf = decoded;
+      const src = ctx.createBufferSource();
+      src.buffer = _ponBuf;
+      src.connect(ctx.destination);
+      src.start(0);
+    });
   }
 }
 
@@ -543,6 +562,12 @@ document.getElementById("modalOverlay").addEventListener("click", (e) => {
   if (e.target.id === "modalOverlay") e.target.classList.remove("open");
 });
 document.getElementById("resetBtn").addEventListener("click", resetField);
+document.getElementById("muteBtn").addEventListener("click", () => {
+  muted = !muted;
+  document.getElementById("muteBtn").textContent = muted ? "🔇" : "🔊";
+});
 
+
+    
 initAudioSystem();
 resetField();
