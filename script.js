@@ -33,6 +33,8 @@ let holdState = null;
 
 let lastX = null;
 let lastY = null;
+let startTouchX = null; // ★長押し開始時のX座標
+let startTouchY = null; // ★長押し開始時のY座標
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
@@ -134,7 +136,10 @@ function buildField() {
     if (type === "flower") emoji = pick(FLOWER_EMOJI);
     if (type === "tree")   emoji = pick(TREE_EMOJI);
     if (type === "veggie") { veggieEmoji = pick(VEGGIE_EMOJI); emoji = pick(WEED_EMOJI); weedCover = true; }
-    if (type === "rare")   { rareInfo = pick(RARE_WEEDS); emoji = Math.random() < 0.5 ? "🌟" : "💖"; }
+    if (type === "rare") {
+      rareInfo = RARE_WEEDS[idx % RARE_WEEDS.length]; // バラけさせるためインデックス参照に変更
+      emoji = rareInfo.icon;
+    }
     return { id: idx, type, emoji, rareInfo, cleared: false, veggieEmoji, weedCover };
   });
 }
@@ -327,12 +332,17 @@ function pullRare(id) {
     renderZukan();
   }
   updateTileVisual(id);
-  showFieldMessage("✨ 採取完了！");
+  showFieldMessage(`✨ 【${tile.rareInfo.name}】採取完了！`);
   hideBarGauge();
 }
 
 function cancelHold() {
-  if (holdState) clearInterval(holdState.interval);
+  if (holdState) {
+    clearInterval(holdState.interval);
+    holdState = null;
+  }
+  startTouchX = null;
+  startTouchY = null;
   hideBarGauge();
 }
 
@@ -345,12 +355,15 @@ function startHold(id) {
   
   const startTime = Date.now();
   const interval = setInterval(() => {
+    if (!holdState) {
+      clearInterval(interval);
+      return;
+    }
     const elapsed = Date.now() - startTime;
     const p = Math.min(100, (elapsed / HOLD_DURATION) * 100);
     
     updateBarGauge(p);
     
-    // 完全に 100% に到達したときだけ引き抜く
     if (p >= 100) {
       clearInterval(interval);
       pullRare(id);
@@ -375,7 +388,7 @@ function triggerResist(id) {
 }
 
 function checkAndPullAt(x, y) {
-  // ★重要★ レア草を長押し中（holdStateがある時）は、なぞり引き処理を完全にスキップして誤作動を防ぐ
+  // レア草を長押し中（holdStateがある時）は、なぞり引き処理を完全にスキップして誤作動を防ぐ
   if (holdState) return;
 
   const found = tileAreas.find(a => x >= a.left && x <= a.right && y >= a.top && y <= a.bottom);
@@ -412,7 +425,13 @@ function onTileDown(e, id) {
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
   
-  if (tile.type === "rare") { startHold(id); return; }
+  if (tile.type === "rare" && !tile.cleared) { 
+    startTouchX = e.pageX;
+    startTouchY = e.pageY;
+    startHold(id); 
+    dragging = false; 
+    return; 
+  }
   
   dragging = true; 
   lastX = e.pageX;
@@ -426,6 +445,16 @@ function onTileDown(e, id) {
 }
 
 function onPointerMoveGlobal(e) {
+  // ★レア草長押し中の微小なブレでのキャンセルを防ぐ（30ピクセル以上動いた時だけ移動とみなしてキャンセル）
+  if (holdState && startTouchX !== null && startTouchY !== null) {
+    const dx = e.pageX - startTouchX;
+    const dy = e.pageY - startTouchY;
+    if (Math.sqrt(dx * dx + dy * dy) > 30) {
+      cancelHold();
+    }
+    return; 
+  }
+
   if (!dragging) return;
   const currentX = e.pageX;
   const currentY = e.pageY;
