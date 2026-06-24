@@ -20,7 +20,7 @@ const RARE_WEEDS = [
 const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
-const HOLD_DURATION = 1100; // ★オレンジバーをじっくり見せるため1.1秒に設定
+const HOLD_DURATION = 1100; // オレンジバーが0から100%まで伸びる時間（1.1秒）
 const TILE_GAP = 4;
 
 let COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
@@ -33,8 +33,6 @@ let holdState = null;
 
 let lastX = null;
 let lastY = null;
-let startTouchX = null;
-let startTouchY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
@@ -63,6 +61,18 @@ function forceUnlockAudio() {
   if (!audioCtx) initAudioSystem();
   if (audioCtx && audioCtx.state === "suspended") {
     audioCtx.resume();
+  }
+  // ★ 触った瞬間に空の音を鳴らしてブラウザのロックを完全に殺す（1個目から音を鳴らす対策）
+  if (audioCtx && !isMuted) {
+    try {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0, audioCtx.currentTime); // 音量はゼロ
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.01);
+    } catch(e){}
   }
 }
 
@@ -269,7 +279,7 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-// ★ オレンジバーが0%からギュインと伸びる演出用のベース
+// ★ ゲージ出現（0%からスタート）
 function showBarGauge(id, rareEmoji) {
   const plEl = document.getElementById("progressLabel");
   if (plEl) plEl.textContent = `抜き取り中... ${rareEmoji}`;
@@ -331,11 +341,11 @@ function pullRare(id) {
     const currentCount = totalPulls[tile.rareInfo.name] || 0;
     totalPulls[tile.rareInfo.name] = currentCount + 1;
     
-    // ★ 中央の文字重なりを防ぐため「大すぽんっ！」を削除し、条件分岐メッセージのみを画面中央に表示
+    // ★ 余計な文字を完全削除。条件分岐のみをきれいに中央表示
     if (currentCount === 0) {
-      showFieldMessage("✨ 図鑑を見よう！"); // 1回目
+      showFieldMessage("✨ 図鑑を見よう！");
     } else {
-      showFieldMessage("✨ 採取完了！"); // 2回目以降
+      showFieldMessage("✨ 採取完了！");
     }
     
     renderZukan();
@@ -349,8 +359,6 @@ function cancelHold() {
     clearInterval(holdState.interval);
     holdState = null;
   }
-  startTouchX = null;
-  startTouchY = null;
   hideBarGauge();
 }
 
@@ -368,7 +376,7 @@ function startHold(id) {
       return;
     }
     const elapsed = Date.now() - startTime;
-    // ★ 1秒かけてしっかり100%まで上昇させる
+    // ★ 1.1秒かけてスムーズに100%まで確実に伸ばす
     const p = Math.min(100, (elapsed / HOLD_DURATION) * 100);
     
     updateBarGauge(p);
@@ -397,7 +405,7 @@ function triggerResist(id) {
 }
 
 function checkAndPullAt(x, y) {
-  if (holdState) return;
+  if (holdState) return; // レア草長押し中はなぞり処理を完全スルー
 
   const found = tileAreas.find(a => x >= a.left && x <= a.right && y >= a.top && y <= a.bottom);
   if (!found) return;
@@ -428,14 +436,12 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); 
+  forceUnlockAudio(); // ここで音源ロックを徹底解除！
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
   
   if (tile.type === "rare" && !tile.cleared) { 
-    startTouchX = e.pageX;
-    startTouchY = e.pageY;
     startHold(id); 
     dragging = false; 
     return; 
@@ -448,19 +454,13 @@ function onTileDown(e, id) {
   if (isProtected(tile)) { 
     triggerShake(id); 
   } else if (canDragPull(tile)) { 
-    pullWeed(id); 
+    pullWeed(id); // 触った瞬間の1個目をここで即座に抜く（音も鳴る！）
   }
 }
 
 function onPointerMoveGlobal(e) {
-  if (holdState && startTouchX !== null && startTouchY !== null) {
-    const dx = e.pageX - startTouchX;
-    const dy = e.pageY - startTouchY;
-    if (Math.sqrt(dx * dx + dy * dy) > 30) {
-      cancelHold();
-    }
-    return; 
-  }
+  // ★ 長押し（holdStateあり）の時は指のわずかなブレ移動を完全に無視してゲージを死守する
+  if (holdState) return;
 
   if (!dragging) return;
   const currentX = e.pageX;
@@ -488,7 +488,7 @@ function onPointerMoveGlobal(e) {
 
 function onPointerUpGlobal() { 
   dragging = false; 
-  cancelHold(); 
+  cancelHold(); // 指を完全に離した時だけ長押しをキャンセル
   lastX = null; 
   lastY = null; 
 }
