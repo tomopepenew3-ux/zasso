@@ -36,7 +36,7 @@ let lastY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
-// ---- 🛠️ 音響システム ----
+// ---- 🛠️ 音響・ミュートシステム ----
 let audioCtx = null;
 let ponBuffer = null;
 let isMuted = false;
@@ -78,7 +78,7 @@ function playPon() {
   }
 }
 
-// ---- 🌱 時雨さんのゲームロジック ----
+// ---- 🌱 ゲームロジック ----
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function isWeedCover(tile)      { return tile.type === "veggie" && tile.weedCover; }
@@ -203,6 +203,9 @@ function updateTileVisual(id) {
 }
 
 function updateCounters() {
+  // 長押し中は上のバーを採取ゲージとして使うため、カウンター更新をスキップする
+  if (holdState) return;
+
   const clearedCount = tiles.filter(countsAsPulled).length;
   const pct = TOTAL_CLEARABLE ? Math.round((clearedCount / TOTAL_CLEARABLE) * 100) : 0;
   
@@ -213,7 +216,13 @@ function updateCounters() {
   if (ptEl) ptEl.textContent = pct + "%";
   
   const pfEl = document.getElementById("progressFill");
-  if (pfEl) pfEl.style.width = pct + "%";
+  if (pfEl) {
+    pfEl.style.width = pct + "%";
+    pfEl.style.background = ""; // 通常色（style.cssの緑色）に戻す
+  }
+
+  const plEl = document.getElementById("progressLabel");
+  if (plEl) plEl.textContent = "エリア達成率（はじまりの庭）";
   
   if (pct >= 100) showFinish();
 }
@@ -256,33 +265,33 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-function showGauge(id, rareEmoji) {
-  const overlay = document.getElementById("gauge-overlay");
-  const el = getTileEl(id);
-  if (!overlay || !el) return;
+// 🌟 上のプログレスバーを「採取ゲージ」に変身させる処理
+function showBarGauge(id, rareEmoji) {
+  const plEl = document.getElementById("progressLabel");
+  if (plEl) plEl.textContent = `抜き取り中... ${rareEmoji}`;
 
-  const rect = el.getBoundingClientRect();
-  overlay.style.left = rect.left + "px";
-  overlay.style.top = rect.top + "px";
-  overlay.style.width = rect.width + "px";
-  overlay.style.height = rect.height + "px";
-  overlay.style.display = "flex";
+  const ptEl = document.getElementById("pctText");
+  if (ptEl) ptEl.textContent = "0%";
 
-  const emojiEl = document.getElementById("gaugeEmoji");
-  if (emojiEl) emojiEl.textContent = rareEmoji;
-
-  const path = document.getElementById("gaugePath");
-  if (path) path.style.strokeDasharray = "0, 100";
+  const pfEl = document.getElementById("progressFill");
+  if (pfEl) {
+    pfEl.style.width = "0%";
+    pfEl.style.background = "linear-gradient(90deg, #ff9800, #ffeb3b)"; // 金色・オレンジ系の色に変身
+  }
 }
 
-function updateGauge(pct) {
-  const path = document.getElementById("gaugePath");
-  if (path) path.style.strokeDasharray = `${pct}, 100`;
+function updateBarGauge(pct) {
+  const ptEl = document.getElementById("pctText");
+  if (ptEl) ptEl.textContent = Math.round(pct) + "%";
+
+  const pfEl = document.getElementById("progressFill");
+  if (pfEl) pfEl.style.width = pct + "%";
 }
 
-function hideGauge(complete) {
-  const overlay = document.getElementById("gauge-overlay");
-  if (overlay) overlay.style.display = "none";
+function hideBarGauge() {
+  // 採取が終わったら元の達成率カウンターに戻す
+  holdState = null;
+  updateCounters();
 }
 
 function pullWeed(id) {
@@ -321,27 +330,27 @@ function pullRare(id) {
   }
   updateTileVisual(id);
   showFieldMessage("✨ 採取完了！");
-  hideGauge(true);
-  updateCounters();
+  hideBarGauge();
 }
 
 function cancelHold() {
   if (holdState) clearInterval(holdState.interval);
-  holdState = null;
-  hideGauge(false);
+  hideBarGauge();
 }
 
 function startHold(id) {
   if (holdState) cancelHold();
   const tile = tiles.find((t) => t.id === id);
-  showGauge(id, tile ? tile.emoji : "🌟");
+  const rareEmoji = tile ? tile.emoji : "🌟";
+  
+  showBarGauge(id, rareEmoji);
+  
   const startTime = Date.now();
   const interval = setInterval(() => {
     const p = Math.min(100, ((Date.now() - startTime) / HOLD_DURATION) * 100);
-    updateGauge(p);
+    updateBarGauge(p);
     if (p >= 100) {
       clearInterval(interval);
-      holdState = null;
       pullRare(id);
     }
   }, 40);
@@ -578,7 +587,7 @@ window.addEventListener("DOMContentLoaded", () => {
     rBtn.addEventListener("click", resetField);
   }
 
-  // 初回画面タッチ・クリック時にブラウザの音響制限を解除する
+  // 画面タッチ時に音響をアンロック
   document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
   document.addEventListener("click", forceUnlockAudio, { passive: true });
   document.addEventListener("touchend", forceUnlockAudio, { passive: true });
