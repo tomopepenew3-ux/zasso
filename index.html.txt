@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>雑草すっぽん！</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <div class="header-left">
+                <span class="header-icon">🌱</span>
+                <div class="header-title">雑草すっぽん！</div>
+            </div>
+            <button class="zukan-btn" id="zukanOpenBtn">📖 図鑑 <span id="zukanCount">0/9</span></button>
+            <button class="mute-btn" id="muteBtn">🔊</button>
+        </div>
+        
+        <div class="progress-wrap">
+            <div class="progress-row">
+                <span id="progressLabel">エリア達成率（はじまりの庭）</span>
+                <span id="pctText">0%</span>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="hint" id="progressHint">✨ 光ってる草は長押しで抜こう／お花と木と家庭菜園は抜いちゃダメ</div>
+        </div>
+
+        <div class="field" id="field">
+            <div class="grid" id="grid"></div>
+        </div>
+
+        <div class="footer">
+            <div class="counter">
+                🌱 抜いた草 <span id="clearedCount">0</span> / <span id="totalClearable">156</span>
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button class="reset-btn" id="muteBtn">🔊 音あり</button>
+                <button class="reset-btn" id="resetBtn">🔄 庭をリセット</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>レア草図鑑</h2>
+                <button class="modal-close" id="zukanCloseBtn">❌</button>
+            </div>
+            <div id="zukanList"></div>
+        </div>
+    </div>
+
+    <div id="gauge-overlay">
+        <svg viewBox="0 0 36 36">
+            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="3"/>
+            <path id="gaugePath" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="gold" stroke-width="3" stroke-dasharray="0, 100"/>
+        </svg>
+        <span class="gauge-emoji" id="gaugeEmoji">🌟</span>
+        <span class="gauge-push">PUSH!</span>
+    </div>
+
+    <script src="script.js?v=3"></script>
+</body>
+</html>
