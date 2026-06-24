@@ -36,10 +36,10 @@ let lastY = null;
 let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
-// ---- 音響・ミュートシステム ----
+// ---- 音響システム（一本化確定版） ----
 let audioCtx = null;
 let ponBuffer = null;
-let isMuted = false;
+let isMuted = false; // 最初は「音あり（ミュートではない）」でスタート！
 
 function initAudioSystem() {
   if (audioCtx) return;
@@ -48,46 +48,22 @@ function initAudioSystem() {
     audioCtx = new ContextClass();
     
     fetch("pon.mp3")
-      .then(res => res.arrayBuffer())
+      .then(res => {
+        if (!res.ok) throw new Error("ファイルが見つかりません");
+        return res.arrayBuffer();
+      })
       .then(data => audioCtx.decodeAudioData(data))
       .then(buffer => { 
         ponBuffer = buffer; 
       })
-      .catch(err => console.error("音源ファイルの読み込みに失敗しました:", err));
+      .catch(err => console.error("音源ファイルの読み込み・デコードに失敗:", err));
   } catch (e) {
     console.error("Web Audio API非対応環境です", e);
   }
 }
 
+// 画面を触った瞬間にブラウザの音響制限を解除する関数
 function forceUnlockAudio() {
-  initAudioSystem();
-  if (!audioCtx) return;
-  
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
-  
-  try {
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
-    gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    oscillator.start(0);
-    oscillator.stop(audioCtx.currentTime + 0.01);
-  } catch (e) {
-    console.error("アンロックエラー:", e);
-  }
-}
-
-document.addEventListener("click", forceUnlockAudio);
-document.addEventListener("touchstart", forceUnlockAudio, { passive: true });
-document.addEventListener("touchend", forceUnlockAudio);
-
-function playPon() {
-  if (isMuted) return; 
   if (!audioCtx) initAudioSystem();
   if (!audioCtx) return;
   
@@ -95,7 +71,33 @@ function playPon() {
     audioCtx.resume();
   }
   
-  if (!ponBuffer) return; 
+  // 空の音を鳴らしてアンロックを確定させる
+  try {
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    oscillator.type = 'sine';
+    gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.start(0);
+    oscillator.stop(audioCtx.currentTime + 0.01);
+  } catch (e) {}
+}
+
+// 画面タッチやクリックの瞬間にアンロックを走らせる（最初から鳴るための仕掛け）
+document.addEventListener("pointerdown", forceUnlockAudio, { passive: true });
+document.addEventListener("click", forceUnlockAudio);
+document.addEventListener("touchstart", forceUnlockAudio, { passive: true });
+
+function playPon() {
+  if (isMuted) return; // ミュート時は絶対に鳴らさない
+  if (!audioCtx) initAudioSystem();
+  if (!audioCtx || !ponBuffer) return; 
+  
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  
   try {
     const source = audioCtx.createBufferSource();
     source.buffer = ponBuffer;
@@ -421,7 +423,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); 
+  forceUnlockAudio(); // タッチした瞬間に確実にアンロック
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
