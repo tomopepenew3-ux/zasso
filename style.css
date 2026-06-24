@@ -50,12 +50,6 @@ html, body {
   border: none; border-radius: 999px;
   padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
-.mute-btn {
-  background: none; border: none;
-  font-size: 20px; cursor: pointer;
-  padding: 4px 8px;
-  display: flex; align-items: center; justify-content: center;
-}
 
 .progress-wrap { flex-shrink: 0; padding: 10px 16px 0; }
 .progress-row {
@@ -242,5 +236,4 @@ html, body {
   15%  { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
   70%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
-}
 }
