@@ -20,7 +20,7 @@ const RARE_WEEDS = [
 const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
-const HOLD_DURATION = 1300; // ★ あなたのアイデア！タイマーを少し長め（1.3秒）にして猶予を作りました
+const HOLD_DURATION = 1300; // あなたのアイデア！猶予を持たせた1.3秒
 const TILE_GAP = 4;
 
 let COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
@@ -30,6 +30,7 @@ let tiles = [];
 let totalPulls = {};
 let dragging = false;
 let holdState = null;
+let holdRafId = null; // ★ 1から書き直したrAFタイマー用のID
 
 let lastX = null;
 let lastY = null;
@@ -40,7 +41,7 @@ let hasShownVeggieCompleteMsg = false;
 let audioCtx = null;
 let ponBuffer = null;
 let isMuted = false;
-let dummyAudio = null; // ★ iOSマナーモード連動用のダミー
+let dummyAudio = null;
 
 function initAudioSystem() {
   if (audioCtx) return;
@@ -48,9 +49,8 @@ function initAudioSystem() {
     const ContextClass = window.AudioContext || window.webkitAudioContext;
     audioCtx = new ContextClass();
     
-    // ★ iOSのマナーモード（消音スイッチ）をWeb Audio APIに強制連動させる魔法の仕込み
     dummyAudio = new Audio();
-    dummyAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAD"; // 超軽量の無音データ
+    dummyAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAAAD";
     dummyAudio.loop = true;
     dummyAudio.muted = false; 
     
@@ -70,19 +70,16 @@ function forceUnlockAudio() {
     audioCtx.resume();
   }
   
-  // ★ iOSの音声再生モードを「マナーモード時は消音」になるカテゴリー（Ambient）に強制的に縛り付けます
   if (dummyAudio && dummyAudio.paused) {
     dummyAudio.play().catch(() => {});
   }
 
-  // ★ 「ブゥー」という耳障りな電子音の発生源（Oscillator）を完全消去！
-  // 代わりに本物の「ポンの音」を一瞬だけボリューム0で再生して、無音でブラウザのロックを解除します
   if (audioCtx && ponBuffer && !isMuted) {
     try {
       const source = audioCtx.createBufferSource();
       const gainNode = audioCtx.createGain();
       source.buffer = ponBuffer;
-      gainNode.gain.setValueAtTime(0, audioCtx.currentTime); // ボリュームを完全にゼロにする
+      gainNode.gain.setValueAtTime(0, audioCtx.currentTime); 
       source.connect(gainNode);
       gainNode.connect(audioCtx.destination);
       source.start(0);
@@ -365,44 +362,61 @@ function pullRare(id) {
   hideBarGauge();
 }
 
+// ★ 1から完全に書き直したホールドキャンセル処理
 function cancelHold() {
-  if (holdState) {
-    clearInterval(holdState.interval);
-    holdState = null;
+  if (holdRafId) {
+    cancelAnimationFrame(holdRafId);
+    holdRafId = null;
   }
+  holdState = null;
   hideBarGauge();
 }
 
-function startHold(id) {
-  if (holdState) cancelHold();
+// ★ 1から完全に書き直した最強のホールド開始処理
+function startHold(id, pointerId, el) {
+  if (holdRafId) cancelAnimationFrame(holdRafId);
+  holdState = null;
+
   const tile = tiles.find((t) => t.id === id);
   const rareEmoji = tile ? tile.emoji : "🌟";
   
+  // 1. まず一瞬で「完全に0%」に画面を強制リセット（ゴミ残りを抹殺）
   showBarGauge(id, rareEmoji);
+  updateBarGauge(0);
   
-  const startTime = Date.now();
-  const interval = setInterval(() => {
-    if (!holdState) {
-      clearInterval(interval);
-      return;
-    }
-    const elapsed = Date.now() - startTime;
-    // タイマー設定時間を 1300ms に伸ばしつつ、画面上の表記を計算
+  // 2. スマホ特有の微細な手ブレによる「勝手にスクロール中断（pointercancel）」を完全に封じる呪文
+  if (el && typeof el.setPointerCapture === "function" && pointerId !== undefined) {
+    try { el.setPointerCapture(pointerId); } catch (e) {}
+  }
+  
+  holdState = { id };
+  const startTime = performance.now();
+  
+  // 3. requestAnimationFrameによる超高精度1コマ毎の計算ループ
+  function tick(now) {
+    if (!holdState || holdState.id !== id) return;
+    
+    const elapsed = now - startTime;
     let p = (elapsed / HOLD_DURATION) * 100;
     
-    // ★ ゲージが100%に達するまでは最大99%で寸止めし、確実に100%の文字を描画してから引き抜く処理へ移行させる
     if (p >= 100) {
       p = 100;
-      updateBarGauge(100); // 画面を100%にする
-      clearInterval(interval);
-      setTimeout(() => { // ほんの一瞬だけ100%の画面を見せてから、すぽんと抜く
-        pullRare(id);
-      }, 50);
+      updateBarGauge(100); // 画面に「100%」を確実に描き切る
+      holdRafId = null;
+      
+      // ほんの一瞬だけ満タンのゲージを見せてから、気持ちよく「すぽんっ！」
+      setTimeout(() => {
+        if (holdState && holdState.id === id) {
+          pullRare(id);
+        }
+      }, 40);
     } else {
       updateBarGauge(p);
+      holdRafId = requestAnimationFrame(tick);
     }
-  }, 20); 
-  holdState = { id, interval };
+  }
+  
+  holdRafId = requestAnimationFrame(tick);
 }
 
 function triggerShake(id) {
@@ -458,7 +472,8 @@ function onTileDown(e, id) {
   if (!tile) return;
   
   if (tile.type === "rare" && !tile.cleared) { 
-    startHold(id); 
+    // ★ pointerId と 要素自身(e.currentTarget) を渡してガチガチに指をロックする
+    startHold(id, e.pointerId, e.currentTarget); 
     dragging = false; 
     return; 
   }
@@ -478,7 +493,6 @@ function onPointerMoveGlobal(e) {
   if (holdState) return;
   if (!dragging) return;
   
-  // ★ 最初の一筆書きのスワイプ移動の瞬間にも、確実に音響のロックを解除する
   forceUnlockAudio();
 
   const currentX = e.pageX;
@@ -650,7 +664,6 @@ window.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", forceUnlockAudio, { passive: true });
   document.addEventListener("touchend", forceUnlockAudio, { passive: true });
 
-  // 起動
   initAudioSystem();
   resetField();
 });
