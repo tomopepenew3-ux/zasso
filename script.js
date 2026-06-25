@@ -366,30 +366,53 @@ function pullRare(id) {
 
 // ★ 1から完全に書き直したホールドキャンセル処理
 function cancelHold() {
-  if (holdRafId) {
-    cancelAnimationFrame(holdRafId);
-    holdRafId = null;
+
+  if (holdState && holdState.interval) {
+    clearInterval(holdState.interval);
   }
+
   holdState = null;
   hideBarGauge();
 }
 
 // ★ 1から完全に書き直した最強のホールド開始処理
 function startHold(id, pointerId, el) {
-  if (holdRafId) cancelAnimationFrame(holdRafId);
-  holdState = null;
+
+  cancelHold();
 
   const tile = tiles.find((t) => t.id === id);
   const rareEmoji = tile ? tile.emoji : "🌟";
-  
-  // 1. まず一瞬で「完全に0%」に画面を強制リセット（ゴミ残りを抹殺）
+
   showBarGauge(id, rareEmoji);
-  updateBarGauge(0);
-  
-  // 2. スマホ特有の微細な手ブレによる「勝手にスクロール中断（pointercancel）」を完全に封じる呪文
-  if (el && typeof el.setPointerCapture === "function" && pointerId !== undefined) {
-    try { el.setPointerCapture(pointerId); } catch (e) {}
-  }
+
+  let progress = 0;
+
+  holdState = {
+    id,
+    interval: setInterval(() => {
+
+      progress += 5;
+
+      if (progress > 100) {
+        progress = 100;
+      }
+
+      updateBarGauge(progress);
+
+      if (progress >= 100) {
+
+        clearInterval(holdState.interval);
+
+        updateBarGauge(100);
+
+        setTimeout(() => {
+          pullRare(id);
+        }, 50);
+      }
+
+    }, 50)
+  };
+}
   
   const rect = el.getBoundingClientRect();
 
