@@ -1,3 +1,7 @@
+現在のGitHubにあるコードはバグだらけになってしまったので無視してください。
+以下にある、以前の「一番爽快感があったベースコード」を元に、【直したいバグ】をすべて修正したコードを作って、GitHubへ直接プルリクエスト（View PRボタン）を送ってください。
+
+【ベースにするコード】
 // ---- 定数 ----
 const WEED_EMOJI = ["🌱", "🍀", "🌿"];
 const FLOWER_EMOJI = ["🌷", "🌼", "🌸"];
@@ -37,72 +41,56 @@ let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
 // ---- 🛠️ 音響・ミュートシステム ----
-// ★ Web Audio API は iOS の消音スイッチ（マナーモード）等の「本体ミュート」を無視して
-//    鳴ってしまうため、本体ミュートを尊重する HTMLAudioElement 方式に変更。
-//    同時に複数回鳴らせるようプール（使い回し用の音源の束）を用意する。
-const PON_SRC = "pon.mp3";
-const PON_POOL_SIZE = 12; // ★ 連続再生でも詰まらないようプールを増量
-let ponPool = [];
-let ponIndex = 0;
-let audioUnlocked = false;
+let audioCtx = null;
+let ponBuffer = null;
 let isMuted = false;
-let lastPonTime = 0;
-const PON_MIN_INTERVAL = 16; // ★ 同フレーム内の重なり過ぎ（音が鳴り続ける現象）を防ぐ最小間隔(ms)
 
 function initAudioSystem() {
-  if (ponPool.length) return;
-  for (let i = 0; i < PON_POOL_SIZE; i++) {
-    const a = new Audio(PON_SRC);
-    a.preload = "auto";
-    a.load(); // ★ 先読みして初回発音のラグを軽減
-    ponPool.push(a);
+  if (audioCtx) return;
+  try {
+    const ContextClass = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new ContextClass();
+    
+    fetch("pon.mp3")
+      .then(r => r.arrayBuffer())
+      .then(b => audioCtx.decodeAudioData(b))
+      .then(decoded => { ponBuffer = decoded; })
+      .catch(e => console.error("音源エラー:", e));
+  } catch (e) {
+    console.error("Web Audio API非対応:", e);
   }
 }
 
-// ★ ブラウザの音声ロック（ユーザー操作前は鳴らせない制限）を最初の操作で確実に解除する。
-//    なぞり書き（スワイプ）開始でも、このアンロックが先に走るので1個目から音が鳴る。
-//    旧実装は promise.then() で「遅延 pause」していたため、直後の playPon() で鳴らした音を
-//    後から来た pause() が止めてしまう競合があった（=最初のスワイプが無音になる原因）。
-//    ここではジェスチャ内で play→pause を同期的に行い、遅延 pause を一切残さない。
 function forceUnlockAudio() {
-  initAudioSystem();
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-
-  ponPool.forEach((a) => {
+  if (!audioCtx) initAudioSystem();
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  if (audioCtx && !isMuted) {
     try {
-      a.volume = 0;
-      const p = a.play();
-      if (p && typeof p.then === "function") p.then(() => {}).catch(() => {});
-      // 同期的に即停止＆リセット（遅延コールバックを残さない）
-      a.pause();
-      a.currentTime = 0;
-      a.volume = 1; // 次の playPon() のために必ず音量を戻す
-    } catch (e) {}
-  });
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0, audioCtx.currentTime); // 音量はゼロ
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.01);
+    } catch(e){}
+  }
 }
 
 function playPon() {
-  // ゲーム内の音量ボタンがOFFなら鳴らさない。
-  // ONのときは HTMLAudio で再生するため、本体がミュート（マナーモード/消音）なら
-  // OS側で自動的に無音になる（=本体ミュートを尊重する）。
-  if (isMuted) return;
-  initAudioSystem();
-
-  // ★ なぞり中に1フレームで複数枚抜けても音が団子状に重ならないようスロットル。
-  //    16ms未満の連打は発音をスキップ（抜き取り自体は実行される）。
-  const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
-  if (now - lastPonTime < PON_MIN_INTERVAL) return;
-  lastPonTime = now;
-
-  const a = ponPool[ponIndex];
-  ponIndex = (ponIndex + 1) % ponPool.length;
+  if (isMuted || !ponBuffer || !audioCtx) return;
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  
   try {
-    a.currentTime = 0;
-    a.volume = 1; // アンロック時に0にしている可能性があるので必ず戻す
-    const p = a.play();
-    if (p && typeof p.catch === "function") p.catch(() => {});
-  } catch (e) {}
+    const source = audioCtx.createBufferSource();
+    source.buffer = ponBuffer;
+    source.connect(audioCtx.destination);
+    source.start(0);
+  } catch (e) {
+    console.error("再生エラー:", e);
+  }
 }
 
 // ---- 🌱 ゲームロジック ----
@@ -232,18 +220,6 @@ function updateTileVisual(id) {
   if (!isSoil) emojiSpan.textContent = tile.emoji;
 }
 
-// ★ なぞり中に1枚抜くたびに重い集計(170枚のfilter)+DOM更新が走るとジャンクで
-//    「抜けが遅れる／音だけ先行する」原因になる。1フレームに1回へ集約してなめらかに。
-let counterUpdateScheduled = false;
-function scheduleCounterUpdate() {
-  if (counterUpdateScheduled) return;
-  counterUpdateScheduled = true;
-  requestAnimationFrame(() => {
-    counterUpdateScheduled = false;
-    updateCounters();
-  });
-}
-
 function updateCounters() {
   if (holdState) return;
 
@@ -258,7 +234,6 @@ function updateCounters() {
   
   const pfEl = document.getElementById("progressFill");
   if (pfEl) {
-    pfEl.style.transition = ""; // ★ 通常時はなめらかな0.25sトランジションに戻す
     pfEl.style.width = pct + "%";
     pfEl.style.background = ""; 
   }
@@ -307,7 +282,6 @@ function addFloatEffect(id, text) {
   setTimeout(() => span.remove(), 750);
 }
 
-// ★ ゲージ出現（0%からスタート）
 function showBarGauge(id, rareEmoji) {
   const plEl = document.getElementById("progressLabel");
   if (plEl) plEl.textContent = `抜き取り中... ${rareEmoji}`;
@@ -317,9 +291,6 @@ function showBarGauge(id, rareEmoji) {
 
   const pfEl = document.getElementById("progressFill");
   if (pfEl) {
-    // ★ ゲージ中はCSSのwidthトランジションを切って、見た目を内部進捗にピッタリ同期させる
-    //    （これをしないと0.25秒遅れて追従するので「満タン前に抜けた」ように見えてしまう）
-    pfEl.style.transition = "none";
     pfEl.style.width = "0%";
     pfEl.style.background = "linear-gradient(90deg, #ff9800, #ffeb3b)"; 
   }
@@ -359,7 +330,7 @@ function pullWeed(id) {
     }
   }
   updateTileVisual(id);
-  scheduleCounterUpdate(); // ★ 集計は1フレームにまとめてジャンクを回避（抜きの見た目を即時優先）
+  updateCounters();
 }
 
 function pullRare(id) {
@@ -371,14 +342,11 @@ function pullRare(id) {
   if (tile.rareInfo) {
     const currentCount = totalPulls[tile.rareInfo.name] || 0;
     totalPulls[tile.rareInfo.name] = currentCount + 1;
-    
-    // ★ 余計な文字を完全削除。条件分岐のみをきれいに中央表示
     if (currentCount === 0) {
-      showFieldMessage("✨ 図鑑を見よう！");
+      showFieldMessage("✨ 図記を見る！");
     } else {
       showFieldMessage("✨ 採取完了！");
     }
-    
     renderZukan();
   }
   updateTileVisual(id);
@@ -387,8 +355,7 @@ function pullRare(id) {
 
 function cancelHold() {
   if (holdState) {
-    if (holdState.raf) cancelAnimationFrame(holdState.raf);
-    if (holdState.interval) clearInterval(holdState.interval);
+    clearInterval(holdState.interval);
     holdState = null;
   }
   hideBarGauge();
@@ -398,26 +365,26 @@ function startHold(id) {
   if (holdState) cancelHold();
   const tile = tiles.find((t) => t.id === id);
   const rareEmoji = tile ? tile.emoji : "🌟";
-
+  
   showBarGauge(id, rareEmoji);
-
-  // ★ requestAnimationFrame でディスプレイのリフレッシュに同期してなめらかに伸ばす。
-  //    完了時は必ず 100% を描画してから抜くので「98%で抜けた」現象が起きない。
-  const startTime = performance.now();
-  holdState = { id, raf: null, interval: null };
-  const step = (now) => {
-    if (!holdState) return;
-    const elapsed = now - startTime;
-    const p = Math.min(100, (elapsed / HOLD_DURATION) * 100);
-    updateBarGauge(p);
-    if (p >= 100) {
-      updateBarGauge(100); // ★ 確実に 100% 表示にしてから抜き取る
-      pullRare(id);
+  
+  const startTime = Date.now();
+  const interval = setInterval(() => {
+    if (!holdState) {
+      clearInterval(interval);
       return;
     }
-    holdState.raf = requestAnimationFrame(step);
-  };
-  holdState.raf = requestAnimationFrame(step);
+    const elapsed = Date.now() - startTime;
+    const p = Math.min(100, (elapsed / HOLD_DURATION) * 100);
+    
+    updateBarGauge(p);
+    
+    if (p >= 100) {
+      clearInterval(interval);
+      pullRare(id);
+    }
+  }, 20); 
+  holdState = { id, interval };
 }
 
 function triggerShake(id) {
@@ -436,7 +403,7 @@ function triggerResist(id) {
 }
 
 function checkAndPullAt(x, y) {
-  if (holdState) return; // レア草長押し中はなぞり処理を完全スルー
+  if (holdState) return;
 
   const found = tileAreas.find(a => x >= a.left && x <= a.right && y >= a.top && y <= a.bottom);
   if (!found) return;
@@ -467,7 +434,7 @@ function cacheTileAreas() {
 
 function onTileDown(e, id) {
   e.preventDefault();
-  forceUnlockAudio(); // ここで音源ロックを徹底解除！
+  forceUnlockAudio();
   
   const tile = tiles.find((t) => t.id === id);
   if (!tile) return;
@@ -485,14 +452,12 @@ function onTileDown(e, id) {
   if (isProtected(tile)) { 
     triggerShake(id); 
   } else if (canDragPull(tile)) { 
-    pullWeed(id); // 触った瞬間の1個目をここで即座に抜く（音も鳴る！）
+    pullWeed(id);
   }
 }
 
 function onPointerMoveGlobal(e) {
-  // ★ 長押し（holdStateあり）の時は指のわずかなブレ移動を完全に無視してゲージを死守する
   if (holdState) return;
-
   if (!dragging) return;
   const currentX = e.pageX;
   const currentY = e.pageY;
@@ -502,7 +467,7 @@ function onPointerMoveGlobal(e) {
     const dy = currentY - lastY;
     const distance = Math.sqrt(dx * dx + dy * dy);
     
-    const steps = Math.ceil(distance / 5); // ★ サンプリングを密にして高速スワイプでもタイルを取りこぼさない
+    const steps = Math.ceil(distance / 8); 
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const x = lastX + dx * t;
@@ -519,7 +484,7 @@ function onPointerMoveGlobal(e) {
 
 function onPointerUpGlobal() { 
   dragging = false; 
-  cancelHold(); // 指を完全に離した時だけ長押しをキャンセル
+  cancelHold();
   lastX = null; 
   lastY = null; 
 }
@@ -614,7 +579,6 @@ function resetField() {
   renderZukan();
 }
 
-// ---- ⚙️ グローバルイベントとUI連携 ----
 window.addEventListener("DOMContentLoaded", () => {
   const muteBtn = document.getElementById("muteBtn");
   if (muteBtn) {
@@ -663,7 +627,13 @@ window.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", forceUnlockAudio, { passive: true });
   document.addEventListener("touchend", forceUnlockAudio, { passive: true });
 
-  // 起動
   initAudioSystem();
   resetField();
 });
+
+
+【直したいバグと必須仕様】
+① レア草用のゲージが100%になりきってから綺麗に抜けるようにしてください（98%で抜けてしまう問題を解消）。
+② ゲーム開始直後になぞり書き（スワイプ）から始めた場合でも最初から音が鳴るよう、pointermoveの最初のイベント発火時にもforceUnlockAudio()を呼び出し、ユーザーが認識できない短い無音（またはダミー音）を一瞬同期再生させてiOSの音声制限を完璧に解除してください。
+③④⑤ 低レイテンシな Web Audio API 方式のままラグを徹底排除し、以前の神速で抜ける最高の爽快感を完全復活させてください。
+⚠️ただしiPhoneのマナーモード（消音スイッチ）の時は絶対に音が鳴らない（消音になる）ように、iOSがマナーモード時にWeb Audio APIを消音する標準的なアプローチ（オーディオコンテキスト生成時の適切なノード接続、またはダミーのHTMLAudioElementをミュート判定用に裏で動かして同期させる等、マナーモードを尊重するWeb Audio API構成）に修正してください。
