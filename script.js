@@ -41,37 +41,43 @@ let hasShownVeggieCompleteMsg = false;
 //    鳴ってしまうため、本体ミュートを尊重する HTMLAudioElement 方式に変更。
 //    同時に複数回鳴らせるようプール（使い回し用の音源の束）を用意する。
 const PON_SRC = "pon.mp3";
-const PON_POOL_SIZE = 8;
+const PON_POOL_SIZE = 12; // ★ 連続再生でも詰まらないようプールを増量
 let ponPool = [];
 let ponIndex = 0;
 let audioUnlocked = false;
 let isMuted = false;
+let lastPonTime = 0;
+const PON_MIN_INTERVAL = 16; // ★ 同フレーム内の重なり過ぎ（音が鳴り続ける現象）を防ぐ最小間隔(ms)
 
 function initAudioSystem() {
   if (ponPool.length) return;
   for (let i = 0; i < PON_POOL_SIZE; i++) {
     const a = new Audio(PON_SRC);
     a.preload = "auto";
+    a.load(); // ★ 先読みして初回発音のラグを軽減
     ponPool.push(a);
   }
 }
 
 // ★ ブラウザの音声ロック（ユーザー操作前は鳴らせない制限）を最初の操作で確実に解除する。
 //    なぞり書き（スワイプ）開始でも、このアンロックが先に走るので1個目から音が鳴る。
+//    旧実装は promise.then() で「遅延 pause」していたため、直後の playPon() で鳴らした音を
+//    後から来た pause() が止めてしまう競合があった（=最初のスワイプが無音になる原因）。
+//    ここではジェスチャ内で play→pause を同期的に行い、遅延 pause を一切残さない。
 function forceUnlockAudio() {
   initAudioSystem();
   if (audioUnlocked) return;
   audioUnlocked = true;
 
-  // 各音源を「無音(volume:0)」で一瞬だけ再生→即停止してロックを解除する。
-  // volume:0 なのでアンロック時にプッという音は鳴らない。
   ponPool.forEach((a) => {
     try {
       a.volume = 0;
       const p = a.play();
-      const restore = () => { try { a.pause(); a.currentTime = 0; } catch (e) {} };
-      if (p && typeof p.then === "function") p.then(restore).catch(restore);
-      else restore();
+      if (p && typeof p.then === "function") p.then(() => {}).catch(() => {});
+      // 同期的に即停止＆リセット（遅延コールバックを残さない）
+      a.pause();
+      a.currentTime = 0;
+      a.volume = 1; // 次の playPon() のために必ず音量を戻す
     } catch (e) {}
   });
 }
@@ -83,6 +89,12 @@ function playPon() {
   if (isMuted) return;
   initAudioSystem();
 
+  // ★ なぞり中に1フレームで複数枚抜けても音が団子状に重ならないようスロットル。
+  //    16ms未満の連打は発音をスキップ（抜き取り自体は実行される）。
+  const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+  if (now - lastPonTime < PON_MIN_INTERVAL) return;
+  lastPonTime = now;
+
   const a = ponPool[ponIndex];
   ponIndex = (ponIndex + 1) % ponPool.length;
   try {
@@ -90,9 +102,7 @@ function playPon() {
     a.volume = 1; // アンロック時に0にしている可能性があるので必ず戻す
     const p = a.play();
     if (p && typeof p.catch === "function") p.catch(() => {});
-  } catch (e) {
-    console.error("再生エラー:", e);
-  }
+  } catch (e) {}
 }
 
 // ---- 🌱 ゲームロジック ----
@@ -222,6 +232,18 @@ function updateTileVisual(id) {
   if (!isSoil) emojiSpan.textContent = tile.emoji;
 }
 
+// ★ なぞり中に1枚抜くたびに重い集計(170枚のfilter)+DOM更新が走るとジャンクで
+//    「抜けが遅れる／音だけ先行する」原因になる。1フレームに1回へ集約してなめらかに。
+let counterUpdateScheduled = false;
+function scheduleCounterUpdate() {
+  if (counterUpdateScheduled) return;
+  counterUpdateScheduled = true;
+  requestAnimationFrame(() => {
+    counterUpdateScheduled = false;
+    updateCounters();
+  });
+}
+
 function updateCounters() {
   if (holdState) return;
 
@@ -337,7 +359,7 @@ function pullWeed(id) {
     }
   }
   updateTileVisual(id);
-  updateCounters();
+  scheduleCounterUpdate(); // ★ 集計は1フレームにまとめてジャンクを回避（抜きの見た目を即時優先）
 }
 
 function pullRare(id) {
@@ -365,7 +387,8 @@ function pullRare(id) {
 
 function cancelHold() {
   if (holdState) {
-    clearInterval(holdState.interval);
+    if (holdState.raf) cancelAnimationFrame(holdState.raf);
+    if (holdState.interval) clearInterval(holdState.interval);
     holdState = null;
   }
   hideBarGauge();
@@ -375,27 +398,26 @@ function startHold(id) {
   if (holdState) cancelHold();
   const tile = tiles.find((t) => t.id === id);
   const rareEmoji = tile ? tile.emoji : "🌟";
-  
+
   showBarGauge(id, rareEmoji);
-  
-  const startTime = Date.now();
-  const interval = setInterval(() => {
-    if (!holdState) {
-      clearInterval(interval);
+
+  // ★ requestAnimationFrame でディスプレイのリフレッシュに同期してなめらかに伸ばす。
+  //    完了時は必ず 100% を描画してから抜くので「98%で抜けた」現象が起きない。
+  const startTime = performance.now();
+  holdState = { id, raf: null, interval: null };
+  const step = (now) => {
+    if (!holdState) return;
+    const elapsed = now - startTime;
+    const p = Math.min(100, (elapsed / HOLD_DURATION) * 100);
+    updateBarGauge(p);
+    if (p >= 100) {
+      updateBarGauge(100); // ★ 確実に 100% 表示にしてから抜き取る
+      pullRare(id);
       return;
     }
-    const elapsed = Date.now() - startTime;
-    // ★ 1.1秒かけてスムーズに100%まで確実に伸ばす
-    const p = Math.min(100, (elapsed / HOLD_DURATION) * 100);
-    
-    updateBarGauge(p);
-    
-    if (p >= 100) {
-      clearInterval(interval);
-      pullRare(id);
-    }
-  }, 20); 
-  holdState = { id, interval };
+    holdState.raf = requestAnimationFrame(step);
+  };
+  holdState.raf = requestAnimationFrame(step);
 }
 
 function triggerShake(id) {
@@ -480,7 +502,7 @@ function onPointerMoveGlobal(e) {
     const dy = currentY - lastY;
     const distance = Math.sqrt(dx * dx + dy * dy);
     
-    const steps = Math.ceil(distance / 8); 
+    const steps = Math.ceil(distance / 5); // ★ サンプリングを密にして高速スワイプでもタイルを取りこぼさない
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const x = lastX + dx * t;
