@@ -1,7 +1,0 @@
-{
-  "name": "zasso",
-  "version": "1.0.0",
-  "scripts": {
-    "start": "echo 'No server needed for static sites'"
-  }
-}
