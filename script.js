@@ -37,54 +37,59 @@ let tileAreas = [];
 let hasShownVeggieCompleteMsg = false;
 
 // ---- 🛠️ 音響・ミュートシステム ----
-let audioCtx = null;
-let ponBuffer = null;
+// ★ Web Audio API は iOS の消音スイッチ（マナーモード）等の「本体ミュート」を無視して
+//    鳴ってしまうため、本体ミュートを尊重する HTMLAudioElement 方式に変更。
+//    同時に複数回鳴らせるようプール（使い回し用の音源の束）を用意する。
+const PON_SRC = "pon.mp3";
+const PON_POOL_SIZE = 8;
+let ponPool = [];
+let ponIndex = 0;
+let audioUnlocked = false;
 let isMuted = false;
 
 function initAudioSystem() {
-  if (audioCtx) return;
-  try {
-    const ContextClass = window.AudioContext || window.webkitAudioContext;
-    audioCtx = new ContextClass();
-    
-    fetch("pon.mp3")
-      .then(r => r.arrayBuffer())
-      .then(b => audioCtx.decodeAudioData(b))
-      .then(decoded => { ponBuffer = decoded; })
-      .catch(e => console.error("音源エラー:", e));
-  } catch (e) {
-    console.error("Web Audio API非対応:", e);
+  if (ponPool.length) return;
+  for (let i = 0; i < PON_POOL_SIZE; i++) {
+    const a = new Audio(PON_SRC);
+    a.preload = "auto";
+    ponPool.push(a);
   }
 }
 
+// ★ ブラウザの音声ロック（ユーザー操作前は鳴らせない制限）を最初の操作で確実に解除する。
+//    なぞり書き（スワイプ）開始でも、このアンロックが先に走るので1個目から音が鳴る。
 function forceUnlockAudio() {
-  if (!audioCtx) initAudioSystem();
-  if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
-  // ★ 触った瞬間に空の音を鳴らしてブラウザのロックを完全に殺す（1個目から音を鳴らす対策）
-  if (audioCtx && !isMuted) {
+  initAudioSystem();
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+
+  // 各音源を「無音(volume:0)」で一瞬だけ再生→即停止してロックを解除する。
+  // volume:0 なのでアンロック時にプッという音は鳴らない。
+  ponPool.forEach((a) => {
     try {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      gain.gain.setValueAtTime(0, audioCtx.currentTime); // 音量はゼロ
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.01);
-    } catch(e){}
-  }
+      a.volume = 0;
+      const p = a.play();
+      const restore = () => { try { a.pause(); a.currentTime = 0; } catch (e) {} };
+      if (p && typeof p.then === "function") p.then(restore).catch(restore);
+      else restore();
+    } catch (e) {}
+  });
 }
 
 function playPon() {
-  if (isMuted || !ponBuffer || !audioCtx) return;
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  
+  // ゲーム内の音量ボタンがOFFなら鳴らさない。
+  // ONのときは HTMLAudio で再生するため、本体がミュート（マナーモード/消音）なら
+  // OS側で自動的に無音になる（=本体ミュートを尊重する）。
+  if (isMuted) return;
+  initAudioSystem();
+
+  const a = ponPool[ponIndex];
+  ponIndex = (ponIndex + 1) % ponPool.length;
   try {
-    const source = audioCtx.createBufferSource();
-    source.buffer = ponBuffer;
-    source.connect(audioCtx.destination);
-    source.start(0);
+    a.currentTime = 0;
+    a.volume = 1; // アンロック時に0にしている可能性があるので必ず戻す
+    const p = a.play();
+    if (p && typeof p.catch === "function") p.catch(() => {});
   } catch (e) {
     console.error("再生エラー:", e);
   }
@@ -231,6 +236,7 @@ function updateCounters() {
   
   const pfEl = document.getElementById("progressFill");
   if (pfEl) {
+    pfEl.style.transition = ""; // ★ 通常時はなめらかな0.25sトランジションに戻す
     pfEl.style.width = pct + "%";
     pfEl.style.background = ""; 
   }
@@ -289,6 +295,9 @@ function showBarGauge(id, rareEmoji) {
 
   const pfEl = document.getElementById("progressFill");
   if (pfEl) {
+    // ★ ゲージ中はCSSのwidthトランジションを切って、見た目を内部進捗にピッタリ同期させる
+    //    （これをしないと0.25秒遅れて追従するので「満タン前に抜けた」ように見えてしまう）
+    pfEl.style.transition = "none";
     pfEl.style.width = "0%";
     pfEl.style.background = "linear-gradient(90deg, #ff9800, #ffeb3b)"; 
   }
