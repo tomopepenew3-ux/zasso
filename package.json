@@ -1,0 +1,12 @@
+{
+  "name": "zasso-suppon",
+  "version": "1.0.0",
+  "description": "雑草すっぽん！",
+  "main": "script.js",
+  "scripts": {
+    "start": "npx servor . index.html 8080 --browse"
+  },
+  "dependencies": {
+    "servor": "^4.0.2"
+  }
+}
