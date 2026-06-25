@@ -2,6 +2,6 @@
   "name": "zasso",
   "version": "1.0.0",
   "scripts": {
-    "start": "npx http-server -p 3002 -d false"
+    "start": "echo 'No server needed for static sites'"
   }
 }
