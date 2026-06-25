@@ -20,8 +20,9 @@ const RARE_WEEDS = [
 const COUNTS = { weed: 144, rare: 6, flower: 12, veggie: 6, tree: 2 };
 const TOTAL_CELLS = Object.values(COUNTS).reduce((a, b) => a + b, 0);
 const TOTAL_CLEARABLE = COUNTS.weed + COUNTS.veggie + COUNTS.rare;
-const HOLD_DURATION = 1300; // あなたのアイデア！猶予を持たせた1.3秒
+const HOLD_DURATION = 1000; // あなたのアイデア！猶予を持たせた1.3秒
 const TILE_GAP = 4;
+const HOLD_TOLERANCE = 40; // 指ブレ許容(px)
 
 let COLS = window.innerWidth >= window.innerHeight ? 17 : 10;
 let ROWS = TOTAL_CELLS / COLS;
@@ -343,6 +344,7 @@ function pullWeed(id) {
 }
 
 function pullRare(id) {
+  updateBarGauge(100);
   const tile = tiles.find((t) => t.id === id);
   if (!tile || tile.type !== "rare" || tile.cleared) return;
   tile.cleared = true;
@@ -389,7 +391,13 @@ function startHold(id, pointerId, el) {
     try { el.setPointerCapture(pointerId); } catch (e) {}
   }
   
-  holdState = { id };
+  const rect = el.getBoundingClientRect();
+
+  holdState = {
+    id,
+    centerX: rect.left + rect.width / 2 + window.scrollX,
+    centerY: rect.top + rect.height / 2 + window.scrollY
+  };
   const startTime = performance.now();
   
   // 3. requestAnimationFrameによる超高精度1コマ毎の計算ループ
@@ -490,7 +498,22 @@ function onTileDown(e, id) {
 }
 
 function onPointerMoveGlobal(e) {
-  if (holdState) return;
+
+  // レア草長押し中
+  if (holdState) {
+
+    const dx = e.pageX - holdState.centerX;
+    const dy = e.pageY - holdState.centerY;
+
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance > HOLD_TOLERANCE) {
+      cancelHold();
+    }
+
+    return;
+  }
+
   if (!dragging) return;
   
   forceUnlockAudio();
